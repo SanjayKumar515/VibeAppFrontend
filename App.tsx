@@ -9,9 +9,15 @@ import RootNavigator from './src/navigation/RootNavigator';
 import { CommonAlertProvider } from './src/components/CommonAlertModal/commonAlertModal';
 import { CommonLoaderProvider } from './src/components/CommonLoader/commonLoader';
 import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
+import { requestUserPermission, notificationListener } from './src/services/notificationService';
 
 const AppContent = () => {
   const { isDarkMode, colors } = useTheme();
+
+  React.useEffect(() => {
+    requestUserPermission();
+    notificationListener();
+  }, []);
 
   const navigationTheme = isDarkMode ? {
     ...NavigationDarkTheme,
