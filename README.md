@@ -1,2 +1,0 @@
-# YoCall
-Connect. Chat. Call.
