@@ -25,6 +25,10 @@ import {
   SendProps,
   Composer,
 } from 'react-native-gifted-chat';
+import { useSelector, useDispatch } from 'react-redux';
+import { RootState } from '../../../store';
+import { setActiveChatRoom } from '../../../store/slices/chatSlice';
+import { socketService } from '../../../services/socketService';
 import { AppStackProps } from '../../../@types';
 import { useTheme } from '../../../theme/ThemeContext';
 import getStyles from './chatRoom.styles';
@@ -82,8 +86,11 @@ const ChatRoom = () => {
   const styles = getStyles(colors);
   const navigation = useNavigation();
   const route = useRoute<ChatRoomRouteProp>();
-  const { name, avatar } = route.params;
+  const { chatId, name, avatar } = route.params;
   const insets = useSafeAreaInsets();
+  const dispatch = useDispatch();
+  
+  const currentUser = useSelector((state: RootState) => state.auth.user);
 
   const [messages, setMessages] = useState<IMessage[]>([]);
   const [isAttachmentModalVisible, setIsAttachmentModalVisible] = useState(false);
@@ -123,14 +130,102 @@ const ChatRoom = () => {
   };
 
   useEffect(() => {
-    setMessages(INITIAL_MESSAGES);
-  }, []);
+    // Set active chat room to clear unread badges
+    dispatch(setActiveChatRoom(chatId));
+
+    let hasReceivedData = false;
+
+    const handleGetMessages = (response: any) => {
+      hasReceivedData = true;
+      if (response.success && response.data) {
+        const formattedMessages = response.data.map((msg: any) => ({
+          _id: msg.id,
+          text: msg.content || '',
+          createdAt: new Date(msg.createdAt),
+          user: {
+            _id: msg.sender.id,
+            name: msg.sender.name,
+            avatar: msg.sender.avatar,
+          },
+          image: msg.attachement,
+        }));
+        
+        // GiftedChat expects messages in reverse chronological order (newest at index 0)
+        const sortedMessages = formattedMessages.sort(
+          (a: any, b: any) => b.createdAt.getTime() - a.createdAt.getTime()
+        );
+        
+        setMessages(sortedMessages);
+      }
+    };
+
+    const handleNewMessage = (response: any) => {
+      if (response.success && response.data) {
+        // Only append if it belongs to this conversation
+        if (response.data.conversationId === chatId) {
+          const newMsg = {
+            _id: response.data.id,
+            text: response.data.content || '',
+            createdAt: new Date(response.data.createdAt),
+            user: {
+              _id: response.data.sender.id,
+              name: response.data.sender.name,
+              avatar: response.data.sender.avatar,
+            },
+            image: response.data.attachement,
+          };
+          
+          setMessages(previousMessages =>
+            GiftedChat.append(previousMessages, [newMsg]),
+          );
+        }
+      }
+    };
+
+    socketService.on('getMessages', handleGetMessages);
+    socketService.on('newMessage', handleNewMessage);
+
+    const requestMessages = () => {
+      if (!hasReceivedData) {
+        socketService.emit('getMessages', { conversationId: chatId });
+      }
+    };
+
+    // Initial request
+    requestMessages();
+
+    // Retry every 1.5 seconds if we haven't received data yet
+    const retryInterval = setInterval(requestMessages, 1500);
+
+    return () => {
+      clearInterval(retryInterval);
+      // Pass the specific handler to off() so we don't accidentally remove global listeners
+      socketService.off('getMessages', handleGetMessages);
+      socketService.off('newMessage', handleNewMessage);
+      
+      // Clear active chat room on unmount
+      dispatch(setActiveChatRoom(null));
+    };
+  }, [chatId, dispatch]);
 
   const onSend = useCallback((newMessages: IMessage[] = []) => {
-    setMessages(previousMessages =>
-      GiftedChat.append(previousMessages, newMessages),
-    );
-  }, []);
+    const msg = newMessages[0];
+    
+    // Emit to backend
+    socketService.emit('newMessage', {
+      conversationId: chatId,
+      content: msg.text,
+      attachement: msg.image,
+      sender: {
+        id: currentUser?.id,
+        name: currentUser?.name || 'Me',
+        avatar: currentUser?.avatar || '',
+      }
+    });
+
+    // Note: We do NOT append to local state immediately here to avoid duplicates.
+    // It will be appended when we receive the 'newMessage' event back from the server.
+  }, [chatId, currentUser]);
 
   const renderBubble = (props: any) => {
     return (
@@ -163,6 +258,32 @@ const ChatRoom = () => {
           left: {
             color: 'gray',
           },
+        }}
+        renderTicks={(currentMessage: any) => {
+          if (currentMessage?.user?._id !== currentUser?.id) return null;
+
+          // Defaulting to 'read' if status is missing to show the blue ticks just like WhatsApp
+          const status = currentMessage.status || 'read';
+
+          if (status === 'read') {
+            return (
+              <View style={{ marginRight: 10, marginBottom: 5 }}>
+                <Icon name="checkmark-done" size={16} color="#34B7F1" />
+              </View>
+            );
+          }
+          if (status === 'delivered') {
+            return (
+              <View style={{ marginRight: 10, marginBottom: 5 }}>
+                <Icon name="checkmark-done" size={16} color="gray" />
+              </View>
+            );
+          }
+          return (
+            <View style={{ marginRight: 10, marginBottom: 5 }}>
+              <Icon name="checkmark" size={16} color="gray" />
+            </View>
+          );
         }}
       />
     );
@@ -285,8 +406,9 @@ const ChatRoom = () => {
               messages={messages}
               onSend={messages => onSend(messages)}
               user={{
-                _id: 1,
-                name: 'Me',
+                _id: currentUser?.id || 1,
+                name: currentUser?.name || 'Me',
+                avatar: currentUser?.avatar || '',
               }}
               renderBubble={renderBubble}
               renderInputToolbar={renderInputToolbar}

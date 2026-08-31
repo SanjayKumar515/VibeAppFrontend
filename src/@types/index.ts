@@ -9,12 +9,13 @@ export type HomeStackProps = {
   Home: undefined;
   Dashboard: undefined;
   Status: undefined;
-  Profile: undefined;
-  ProfileDetails: undefined;
+  Communities: undefined;
   Settings: undefined;
 };
 
 export type AppStackProps = {
   HomeTabs: undefined;
-  ChatRoom: { chatId: string; name: string; avatar?: string };
+  ChatRoom: { chatId: string; name: string; avatar: string };
+  Profile: undefined;
+  Contacts: undefined;
 };

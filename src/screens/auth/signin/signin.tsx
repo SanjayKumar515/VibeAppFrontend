@@ -1,110 +1,173 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, Alert, TouchableOpacity, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard, ScrollView } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { getAuth, signInWithPhoneNumber, getIdToken, ConfirmationResult } from '@react-native-firebase/auth';
-import { useDispatch } from 'react-redux';
+import React, { useState } from "react";
+import {
+  View,
+  Text,
+  TextInput,
+  Alert,
+  TouchableOpacity,
+  KeyboardAvoidingView,
+  Platform,
+  TouchableWithoutFeedback,
+  Keyboard,
+  ScrollView,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-import { signIn } from '../../../store/slices/authSlice';
-import getStyles from './signin.styles';
-import { useTheme } from '../../../theme/ThemeContext';
+import { useDispatch } from "react-redux";
+
+import { signIn } from "../../../store/slices/authSlice";
+import getStyles from "./signin.styles";
+import { useTheme } from "../../../theme/ThemeContext";
+import { apiService } from "../../../services/apiService";
+import { socketService } from "../../../services/socketService";
+import { storage } from "../../../utils/storage";
+import { jwtDecode } from "jwt-decode";
+
+import { CommonLoader } from "../../../components/CommonLoader/commonLoader";
+import { getFcmToken } from "../../../services/notificationService";
 
 const Signin = () => {
   const { colors } = useTheme();
   const styles = getStyles(colors);
+  const { showLoader, hideLoader } = CommonLoader();
 
   const dispatch = useDispatch();
 
-  const [phoneNumber, setPhoneNumber] = useState('');
-  const [code, setCode] = useState('');
-  const [confirmResult, setConfirmResult] =
-    useState<ConfirmationResult | null>(null);
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [code, setCode] = useState("");
+  const [isOtpSent, setIsOtpSent] = useState(false);
 
   const handleSignInWithPhoneNumber = async () => {
     Keyboard.dismiss();
     if (!phoneNumber) {
-      Alert.alert('Error', 'Please enter your phone number.');
+      Alert.alert("Error", "Please enter your phone number.");
       return;
     }
 
     try {
-      const auth = getAuth();
+      showLoader();
       const fullNumber = `+91${phoneNumber}`; // Hardcoding India code to match UI
-      const confirmation = await signInWithPhoneNumber(auth, fullNumber);
+      let fcmToken = await getFcmToken();
 
-      setConfirmResult(confirmation);
+      if (!fcmToken) {
+        // Fallback or handle error if push notifications are disabled
+        console.log("Failed to get FCM token, using dummy_token");
+        fcmToken = "dummy_token";
+      }
 
-      Alert.alert('Success', 'SMS verification code sent.');
+      const response = await apiService.post("/auth/request-otp", {
+        phoneNumber: fullNumber,
+        fcmToken: fcmToken,
+      });
+
+      hideLoader();
+
+      if (response.success) {
+        setIsOtpSent(true);
+        Alert.alert("Success", "SMS verification code sent.");
+      } else {
+        throw new Error(response.msg || "Failed to send OTP");
+      }
     } catch (error: any) {
-      console.log('Phone Auth Error:', error);
+      hideLoader();
+      console.log("OTP Request Error:", error);
 
-      Alert.alert('OTP Error', error?.message || 'Something went wrong');
+      Alert.alert("OTP Error", error?.message || "Something went wrong");
     }
   };
 
   const confirmCode = async () => {
     Keyboard.dismiss();
     if (!code) {
-      Alert.alert('Error', 'Please enter the 6-digit code.');
+      Alert.alert("Error", "Please enter the 6-digit code.");
       return;
     }
 
     try {
-      if (!confirmResult) {
-        Alert.alert('Error', 'Please request OTP first');
+      if (!isOtpSent) {
+        Alert.alert("Error", "Please request OTP first");
         return;
       }
 
-      const userCredential = await confirmResult.confirm(code);
-      const user = userCredential.user;
-      const token = await getIdToken(user);
+      showLoader();
+      const fullNumber = `+91${phoneNumber}`;
 
-      dispatch(
-        signIn({
-          user: {
-            id: user.uid,
-            email: user.phoneNumber || '',
-          },
-          token: token,
-        }),
-      );
+      // Verify with backend directly
+      const response = await apiService.post("/auth/verify-otp", {
+        phoneNumber: fullNumber,
+        otp: code,
+      });
 
+      if (response.success) {
+        const backendToken = response.token;
+
+        // Decode the JWT to get the user ID
+        const decoded = jwtDecode(backendToken) as any;
+        const userPayload = decoded.user; // contains id, name, phoneNumber, avatar, about
+
+        // Connect socket with token
+        socketService.connect(backendToken);
+
+        hideLoader();
+
+        // Persist session
+        await storage.setItem('token', backendToken);
+        await storage.setItem('user', userPayload);
+
+        dispatch(
+          signIn({
+            user: userPayload,
+            token: backendToken,
+          }),
+        );
+      } else {
+        throw new Error(response.msg || "Backend verification failed");
+      }
     } catch (error: any) {
-      console.log('Confirm OTP Error:', error);
-      Alert.alert('Invalid code', 'The code you entered is incorrect. Please try again.');
+      hideLoader();
+      console.log("Confirm OTP Error:", error);
+      Alert.alert(
+        "Verification Failed",
+        error?.message ||
+          "The code you entered is incorrect. Please try again.",
+      );
     }
   };
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
-      <KeyboardAvoidingView 
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={{ flex: 1 }}
       >
-        <ScrollView 
-          contentContainerStyle={{ flexGrow: 1 }} 
+        <ScrollView
+          contentContainerStyle={{ flexGrow: 1 }}
           keyboardShouldPersistTaps="handled"
           bounces={false}
         >
           <View style={styles.container}>
-            
             <View style={styles.headerContainer}>
               <Text style={styles.headerTitle}>
-                {!confirmResult ? 'Enter your phone number' : 'Verify your phone number'}
+                {!isOtpSent
+                  ? "Enter your phone number"
+                  : "Verify your phone number"}
               </Text>
-              {!confirmResult ? (
+              {!isOtpSent ? (
                 <Text style={styles.subtitle}>
-                  WhatsApp will need to verify your phone number. Carrier charges may apply.{' '}
+                  WhatsApp will need to verify your phone number. Carrier
+                  charges may apply.{" "}
                   <Text style={styles.linkText}>What's my number?</Text>
                 </Text>
               ) : (
                 <Text style={styles.subtitle}>
-                  Waiting to automatically detect an SMS sent to +91 {phoneNumber}.{' '}
+                  Waiting to automatically detect an SMS sent to +91{" "}
+                  {phoneNumber}.{" "}
                   <Text style={styles.linkText}>Wrong number?</Text>
                 </Text>
               )}
             </View>
 
-            {!confirmResult ? (
+            {!isOtpSent ? (
               <View style={styles.inputWrapper}>
                 <View style={styles.countryPickerContainer}>
                   <Text style={styles.countryText}>India</Text>
@@ -128,9 +191,23 @@ const Signin = () => {
               </View>
             ) : (
               <View style={styles.inputWrapper}>
-                <View style={[styles.phoneInputContainer, { justifyContent: 'center', width: '100%' }]}>
+                <View
+                  style={[
+                    styles.phoneInputContainer,
+                    { justifyContent: "center", width: "100%" },
+                  ]}
+                >
                   <TextInput
-                    style={[styles.input, { flex: 0, width: 150, textAlign: 'center', fontSize: 24, letterSpacing: 4 }]}
+                    style={[
+                      styles.input,
+                      {
+                        flex: 0,
+                        width: 150,
+                        textAlign: "center",
+                        fontSize: 24,
+                        letterSpacing: 4,
+                      },
+                    ]}
                     placeholder="--- ---"
                     placeholderTextColor="#a0a0a0"
                     value={code}
@@ -140,19 +217,20 @@ const Signin = () => {
                     autoFocus
                   />
                 </View>
-                <Text style={[styles.subtitle, { marginTop: 24 }]}>Enter 6-digit code</Text>
+                <Text style={[styles.subtitle, { marginTop: 24 }]}>
+                  Enter 6-digit code
+                </Text>
               </View>
             )}
 
             <View style={styles.buttonContainer}>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.nextButton}
-                onPress={!confirmResult ? handleSignInWithPhoneNumber : confirmCode}
+                onPress={!isOtpSent ? handleSignInWithPhoneNumber : confirmCode}
               >
                 <Text style={styles.nextButtonText}>Next</Text>
               </TouchableOpacity>
             </View>
-
           </View>
         </ScrollView>
       </KeyboardAvoidingView>

@@ -1,6 +1,5 @@
 import React, { createContext, useRef, useContext, useState } from 'react';
-import { ActivityIndicator, View } from 'react-native';
-import Modal from 'react-native-modal';
+import { ActivityIndicator, View, Modal, StyleSheet } from 'react-native';
 import styles from './styles';
 import { useTheme } from '../../theme/ThemeContext';
 
@@ -30,18 +29,18 @@ export const CommonLoaderProvider: React.FC<{ children: React.ReactNode }> = ({
     <ModalContext.Provider value={{ showLoader, hideLoader }}>
       {children}
       <Modal
-        style={styles.modalBackground}
-        isVisible={modalShow}
-        coverScreen={true}
-        animationIn={'fadeIn'}
-        animationOut={'fadeOut'}
-        backdropOpacity={0.8}
+        transparent={true}
+        visible={modalShow}
+        animationType="fade"
       >
-        <View style={styles.loaderView}>
-          <ActivityIndicator
-            style={{ width: '40%', height: '40%' }}
-            color={colors.PRIMARY[400]}
-          />
+        <View style={StyleSheet.flatten([styles.modalBackground, { backgroundColor: 'rgba(0,0,0,0.8)' }])}>
+          <View style={styles.loaderView}>
+            <ActivityIndicator
+              style={{ width: '40%', height: '40%' }}
+              size="large"
+              color={colors.PRIMARY[400]}
+            />
+          </View>
         </View>
       </Modal>
     </ModalContext.Provider>
