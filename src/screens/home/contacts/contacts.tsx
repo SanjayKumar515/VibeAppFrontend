@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import FastImage from 'react-native-fast-image';
 import { View, Text, FlatList, TouchableOpacity, Image, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -94,7 +95,7 @@ const Contacts = () => {
         style={styles.contactRow}
         onPress={() => startChat(item)}
       >
-        <Image source={{ uri: avatar }} style={styles.avatar} />
+        <FastImage source={{ uri: avatar }} style={styles.avatar} />
         <View style={styles.contactDetails}>
           <Text style={styles.contactName}>{name}</Text>
           <Text style={styles.contactAbout} numberOfLines={1}>{about}</Text>

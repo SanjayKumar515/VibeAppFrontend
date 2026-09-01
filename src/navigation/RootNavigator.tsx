@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { View, ActivityIndicator, Alert } from 'react-native';
+import { View, ActivityIndicator, Alert, AppState } from 'react-native';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '../store';
 import { signIn, signOut } from '../store/slices/authSlice';
@@ -9,6 +9,7 @@ import AppStack from './AppStack';
 import { apiService } from '../services/apiService';
 import { socketService } from '../services/socketService';
 import { storage } from '../utils/storage';
+import { navigationRef } from '../../App';
 
 const RootNavigator = () => {
   const [initializing, setInitializing] = useState(true);
@@ -70,10 +71,44 @@ const RootNavigator = () => {
 
     socketService.on('newMessage', handleNewMessage);
 
+    const handleIncomingCall = (data: any) => {
+      const fromId = data.callerId || data.from;
+      // Ignore call events triggered by ourselves (since it's broadcasted to the conversation room)
+      if (fromId === userRef.current?.id) return;
+
+      // Assuming backend sends: { callerId, callerName, callerAvatar, signal }
+      if (navigationRef.isReady()) {
+        navigationRef.navigate('IncomingCallScreen', {
+          callerId: fromId,
+          callerName: data.callerName || data.name || 'Unknown',
+          callerAvatar: data.callerAvatar || data.avatar || '',
+          signal: data.signal
+        });
+      }
+    };
+
+    socketService.on('incomingCall', handleIncomingCall);
+
     return () => {
       socketService.off('newMessage', handleNewMessage);
+      socketService.off('incomingCall', handleIncomingCall);
     };
   }, [dispatch]);
+
+  // AppState listener for online/offline presence tracking
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        socketService.emit('userOnline', {});
+      } else if (nextAppState === 'background' || nextAppState === 'inactive') {
+        socketService.emit('userOffline', {});
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
 
   if (initializing) {
     return (

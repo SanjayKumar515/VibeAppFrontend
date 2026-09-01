@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import FastImage from 'react-native-fast-image';
 import {
   View,
   Text,
@@ -12,7 +13,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useSelector, useDispatch } from "react-redux";
 import { RootState } from "../../../store";
-import { updateUser } from "../../../store/slices/authSlice";
+import { updateUser, signOut } from "../../../store/slices/authSlice";
 import { socketService } from "../../../services/socketService";
 import Icon from "react-native-vector-icons/Ionicons";
 import MaterialIcons from "react-native-vector-icons/MaterialIcons";
@@ -117,6 +118,23 @@ const Profile = () => {
       console.log("Picker Error: ", error);
     }
   };
+  const handleLogout = () => {
+    Alert.alert("Logout", "Are you sure you want to logout?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Logout",
+        style: "destructive",
+        onPress: () => {
+          showLoader();
+          dispatch(signOut());
+          storage.removeItem("user");
+          storage.removeItem("token");
+          socketService.disconnect();
+          hideLoader();
+        },
+      },
+    ]);
+  };
 
   return (
     <SafeAreaView
@@ -139,7 +157,7 @@ const Profile = () => {
       <ScrollView contentContainerStyle={styles.content}>
         {/* Avatar Section */}
         <View style={styles.avatarContainer}>
-          <Image
+          <FastImage
             source={{ uri: avatar || "https://i.pravatar.cc/150" }}
             style={styles.avatar}
           />
@@ -301,6 +319,18 @@ const Profile = () => {
             </View>
           </View>
         </View>
+
+        {/* Logout Item */}
+        <TouchableOpacity style={[styles.listItem, { marginTop: 20 }]} onPress={handleLogout}>
+          <View style={styles.iconContainer}>
+            <Icon name="log-out-outline" size={26} color="#ef4444" />
+          </View>
+          <View style={[styles.itemContent, { borderBottomWidth: 0, justifyContent: 'center', paddingTop: 10 }]}>
+            <Text style={{ fontSize: 17, color: "#ef4444", fontWeight: "600" }}>
+              Logout
+            </Text>
+          </View>
+        </TouchableOpacity>
       </ScrollView>
 
       <ImagePickerModal

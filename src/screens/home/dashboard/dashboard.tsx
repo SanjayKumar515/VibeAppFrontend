@@ -1,3 +1,4 @@
+import FastImage from "react-native-fast-image";
 import React, {
   useEffect,
   useState,
@@ -5,7 +6,15 @@ import React, {
   useCallback,
   useRef,
 } from "react";
-import { View, Text, FlatList, TouchableOpacity, Image, Animated } from "react-native";
+import {
+  View,
+  Text,
+  FlatList,
+  TouchableOpacity,
+  Image,
+  Animated,
+  Alert,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -17,10 +26,12 @@ import { AppStackProps } from "../../../@types";
 import { useTheme } from "../../../theme/ThemeContext";
 import getStyles from "./dashboard.styles";
 import { socketService } from "../../../services/socketService";
+import { apiService } from "../../../services/apiService";
 
 type NavigationProp = NativeStackNavigationProp<AppStackProps, "HomeTabs">;
 
 import Skeleton from "react-native-reanimated-skeleton";
+import { TextView, CommonImagePicker, CommonLoader } from "../../../components";
 
 const SkeletonItem = ({ colors, styles }: any) => {
   return (
@@ -71,6 +82,7 @@ const Dashboard = () => {
     (state: RootState) => state.chat.unreadCounts,
   );
   const [conversations, setConversations] = useState<any[]>([]);
+  const [statuses, setStatuses] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useFocusEffect(
@@ -145,6 +157,18 @@ const Dashboard = () => {
         if (!hasReceivedData) {
           socketService.emit("getConversations", {});
         }
+
+        // Fetch statuses as well to show rings
+        apiService
+          .get("/api/status")
+          .then((res) => {
+            if (res.success && res.data && res.data.recentUpdates) {
+              setStatuses(res.data.recentUpdates);
+            }
+          })
+          .catch((err) =>
+            console.log("Failed to fetch statuses for dashboard:", err),
+          );
       };
 
       // Initial request
@@ -226,6 +250,33 @@ const Dashboard = () => {
       );
     };
 
+    // Determine if we should show a status ring
+    const userStatus = otherParticipant
+      ? statuses.find((s: any) => s.user.id === otherParticipant._id)
+      : null;
+    const hasUnreadStatus = userStatus ? !userStatus.allRead : false;
+    const hasReadStatus = userStatus ? userStatus.allRead : false;
+
+    const handleDeleteChat = () => {
+      Alert.alert(
+        "Delete Chat",
+        `Are you sure you want to delete your chat with ${displayName}? This action cannot be undone.`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Delete",
+            style: "destructive",
+            onPress: () => {
+              socketService.emit("deleteChat", { conversationId: item._id });
+              setConversations((prev) =>
+                prev.filter((c) => c._id !== item._id),
+              );
+            },
+          },
+        ],
+      );
+    };
+
     return (
       <TouchableOpacity
         style={styles.chatRow}
@@ -234,10 +285,34 @@ const Dashboard = () => {
             chatId: item._id,
             name: displayName,
             avatar: displayAvatar,
+            targetUserId: otherParticipant?._id,
           })
         }
+        onLongPress={handleDeleteChat}
+        delayLongPress={500}
       >
-        <Image source={{ uri: displayAvatar }} style={styles.avatar} />
+        <View
+          style={[
+            hasUnreadStatus
+              ? {
+                  borderWidth: 2,
+                  borderColor: colors.tabBarActive,
+                  padding: 2,
+                  borderRadius: 30,
+                }
+              : {},
+            hasReadStatus && !hasUnreadStatus
+              ? {
+                  borderWidth: 2,
+                  borderColor: colors.border,
+                  padding: 2,
+                  borderRadius: 30,
+                }
+              : {},
+          ]}
+        >
+          <FastImage source={{ uri: displayAvatar }} style={styles.avatar} />
+        </View>
         <View style={styles.chatDetails}>
           <View style={styles.chatHeader}>
             <Text style={styles.chatName}>{displayName}</Text>

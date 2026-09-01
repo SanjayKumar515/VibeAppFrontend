@@ -16,6 +16,7 @@ class SocketService {
 
       this.socket.on('connect', () => {
         console.log('Socket connected successfully:', this.socket?.id);
+        this.socket?.emit('userOnline', {});
       });
 
       this.socket.on('disconnect', (reason) => {

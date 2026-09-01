@@ -1,3 +1,4 @@
+import FastImage from "react-native-fast-image";
 import {
   ActivityIndicator,
   TouchableOpacity,
@@ -7,12 +8,12 @@ import {
   Image,
   DimensionValue,
   Text,
-} from 'react-native';
-import getStyles from './styles';
-import { FC } from 'react';
-import _ from 'lodash';
-import { widthPercentageToDP as wp } from 'react-native-responsive-screen';
-import { useTheme } from '../../theme/ThemeContext';
+} from "react-native";
+import getStyles from "./styles";
+import { FC } from "react";
+import _ from "lodash";
+import { widthPercentageToDP as wp } from "react-native-responsive-screen";
+import { useTheme } from "../../theme/ThemeContext";
 
 interface ButtonProps {
   onPress?: () => void;
@@ -45,12 +46,12 @@ const Button: FC<ButtonProps> = ({
   icon,
   showIcon,
   showfileSize,
-  pdfFileSize = '50 KB',
+  pdfFileSize = "50 KB",
   buttonWidth = wp(80),
 }) => {
   const { colors } = useTheme();
   const styles = getStyles(colors);
-  
+
   const resolvedIndicatorColor = indicatorColor ?? colors.PRIMARY[300];
   const resolvedButtonColor = buttonColor ?? colors.PRIMARY[100];
   const resolvedTextColor = textColor ?? colors.PRIMARY[300];
@@ -69,7 +70,7 @@ const Button: FC<ButtonProps> = ({
         _.debounce(onPress, 300)();
       }
     } catch (error) {
-      console.warn('handleClick', error);
+      console.warn("handleClick", error);
     }
   };
 
@@ -79,7 +80,9 @@ const Button: FC<ButtonProps> = ({
       style={[
         styles.buttonContainer,
         {
-          backgroundColor: disabled ? colors.SECONDARY[200] : resolvedButtonColor,
+          backgroundColor: disabled
+            ? colors.SECONDARY[200]
+            : resolvedButtonColor,
           width: buttonWidth,
         },
         style,
@@ -101,7 +104,11 @@ const Button: FC<ButtonProps> = ({
                 source={icon}
                 style={[
                   iconStyle,
-                  { tintColor: disabled ? colors.PRIMARY[300] : resolvedTextColor },
+                  {
+                    tintColor: disabled
+                      ? colors.PRIMARY[300]
+                      : resolvedTextColor,
+                  },
                 ]}
               />
             )}

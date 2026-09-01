@@ -2,7 +2,7 @@ import React, { useMemo } from "react";
 import { Platform } from "react-native";
 import { createNativeBottomTabNavigator } from "@bottom-tabs/react-navigation";
 import { HomeStackProps } from "../@types";
-import { Dashboard, Profile, Settings, Status, Communities } from "../screens";
+import { Dashboard, Profile, Settings, Status, Communities, CallHistory } from "../screens";
 import Icon from "react-native-vector-icons/Ionicons";
 import MaterialIcons from "react-native-vector-icons/MaterialIcons";
 import { Fonts } from "../constant";
@@ -105,8 +105,8 @@ const HomeStack = () => {
         }}
       />
       <Tab.Screen
-        name="Settings"
-        component={Settings}
+        name="CallHistory"
+        component={CallHistory}
         options={{
           tabBarLabel: "Calls",
           tabBarIcon: ({ focused }) =>

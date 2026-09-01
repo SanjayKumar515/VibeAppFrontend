@@ -1,4 +1,5 @@
 import { API_URL } from "../constant/config";
+import { storage } from "../utils/storage";
 
 class ApiService {
   private async request(endpoint: string, options: RequestInit = {}) {
@@ -13,8 +14,12 @@ class ApiService {
     const headers = new Headers(options.headers);
     headers.set("Content-Type", "application/json");
     headers.set("Accept", "application/json");
-    // TODO: Add auth token if needed
-    // headers.set('Authorization', `Bearer ${token}`);
+    
+    // Add auth token
+    const token = await storage.getItem<string>('token');
+    if (token) {
+      headers.set('Authorization', `Bearer ${token}`);
+    }
 
     try {
       const response = await fetch(url, {

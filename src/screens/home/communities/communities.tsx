@@ -1,4 +1,5 @@
 import React from 'react';
+import FastImage from 'react-native-fast-image';
 import { View, Text, TouchableOpacity, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
@@ -22,7 +23,7 @@ const Communities = () => {
 
       {/* Content */}
       <View style={styles.content}>
-        <Image
+        <FastImage
           source={{ uri: 'https://i.imgur.com/Kx2H5i6.png' }} // Placeholder for communities graphic
           style={styles.imagePlaceholder}
           resizeMode="contain"

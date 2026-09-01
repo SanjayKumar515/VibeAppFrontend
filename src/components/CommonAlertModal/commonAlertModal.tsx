@@ -1,10 +1,11 @@
-import React, { createContext, useContext, useState } from 'react';
-import { View, Pressable } from 'react-native';
-import { Button, TextView } from '../index';
-import Modal from 'react-native-modal';
-import getStyles from './styles';
-import { widthPercentageToDP as wp } from 'react-native-responsive-screen';
-import { useTheme } from '../../theme/ThemeContext';
+import React, { createContext, useContext, useState } from "react";
+import { View, Pressable } from "react-native";
+import Button from "../Button/button";
+import TextView from "../TextView/textView";
+import Modal from "react-native-modal";
+import getStyles from "./styles";
+import { widthPercentageToDP as wp } from "react-native-responsive-screen";
+import { useTheme } from "../../theme/ThemeContext";
 
 interface ModalProps {
   showAlert: (
@@ -16,29 +17,31 @@ interface ModalProps {
     modalCancelButtonText?: string,
     modalCancelPress?: () => void,
   ) => void;
+
   hideAlert: () => void;
 }
 
 const ModalContext = createContext<ModalProps | undefined>(undefined);
 
-export const CommonAlertProvider: React.FC<{ children: React.ReactNode }> = ({
-  children,
-}) => {
-  //Class States
-  const [modalShow, setModalShow] = useState(false);
-  const [modalType, setModalType] = useState('');
-
+export const CommonAlertProvider: React.FC<{
+  children: React.ReactNode;
+}> = ({ children }) => {
   const { colors } = useTheme();
   const styles = getStyles(colors);
 
-  //Update States When Modal is Shown
-  const [modalTitle, setModalTitle] = useState('');
-  const [modalText, setModalText] = useState('');
-  const [modalActionButtonText, setModalActionButtonText] = useState('');
+  const [modalShow, setModalShow] = useState(false);
+  const [modalType, setModalType] = useState("");
+
+  const [modalTitle, setModalTitle] = useState("");
+  const [modalText, setModalText] = useState("");
+  const [modalActionButtonText, setModalActionButtonText] = useState("");
+
   const [modalActionPress, setModalActionPress] = useState<
     (() => void) | undefined
   >(undefined);
-  const [modalCancelButtonText, setModalCancelButtonText] = useState('');
+
+  const [modalCancelButtonText, setModalCancelButtonText] = useState("");
+
   const [modalCancelPress, setModalCancelPress] = useState<
     (() => void) | undefined
   >(undefined);
@@ -46,38 +49,23 @@ export const CommonAlertProvider: React.FC<{ children: React.ReactNode }> = ({
   const showAlert = (
     modalTitle: string,
     modalText: string,
-    modalActionButtonText: string = '',
+    modalActionButtonText: string = "",
     modalActionPress: () => void = () => {},
-    modalType?: string,
-    modalCancelButtonText: string = '',
+    modalType: string = "",
+    modalCancelButtonText: string = "",
     modalCancelPress: () => void = () => {},
   ) => {
     setModalTitle(modalTitle);
     setModalText(modalText);
     setModalActionButtonText(modalActionButtonText);
+
     setModalActionPress(() => modalActionPress);
+
     setModalCancelButtonText(modalCancelButtonText);
     setModalCancelPress(() => modalCancelPress);
-    switch (modalType) {
-      case 'confirm':
-        setTimeout(() => {
-          setModalShow(true);
-          setModalType('confirm');
-        }, 500);
-        break;
-      case 'internet':
-        setTimeout(() => {
-          setModalShow(true);
-          setModalType('internet');
-        }, 500);
-        break;
-      default:
-        setTimeout(() => {
-          setModalShow(true);
-          setModalType('');
-        }, 500);
-        break;
-    }
+
+    setModalType(modalType);
+    setModalShow(true);
   };
 
   const hideAlert = () => {
@@ -87,15 +75,24 @@ export const CommonAlertProvider: React.FC<{ children: React.ReactNode }> = ({
   return (
     <ModalContext.Provider value={{ showAlert, hideAlert }}>
       {children}
-      <Modal isVisible={modalShow}>
+
+      <Modal
+        isVisible={modalShow}
+        onBackdropPress={modalType === "confirm" ? undefined : hideAlert}
+        onBackButtonPress={hideAlert}
+      >
         <View style={styles.modalViewContainer}>
           <View style={styles.modalView}>
+            {/* Title */}
             <TextView style={styles.modalTitleText}>
-              {modalTitle || 'Something went wrong'}
+              {modalTitle || "Something went wrong"}
             </TextView>
+
+            {/* Message */}
             <TextView style={styles.modalText}>{modalText}</TextView>
-            {/* Action Button */}
-            <View style={[styles.actionButtonView]}>
+
+            {/* Delete / Action Button */}
+            <View style={styles.actionButtonView}>
               <Button
                 title={modalActionButtonText}
                 buttonColor={colors.PRIMARY[300]}
@@ -104,15 +101,16 @@ export const CommonAlertProvider: React.FC<{ children: React.ReactNode }> = ({
                 textColor={colors.PRIMARY[100]}
               />
             </View>
-            {/* Cancel & Go Back Button Show Only When Modal Type is Confirmation */}
-            {modalType === 'confirm' && (
+
+            {/* Cancel Button */}
+            {modalType === "confirm" && (
               <View style={styles.cancelButtonView}>
                 <Pressable
                   style={styles.cancelButton}
-                  onPress={() => hideAlert()}
+                  onPress={modalCancelPress}
                 >
                   <TextView style={styles.caneclButtonText}>
-                    {modalCancelButtonText}
+                    {modalCancelButtonText || "Cancel"}
                   </TextView>
                 </Pressable>
               </View>
@@ -126,8 +124,12 @@ export const CommonAlertProvider: React.FC<{ children: React.ReactNode }> = ({
 
 export const CommonAlertModal = (): ModalProps => {
   const modalContext = useContext(ModalContext);
+
   if (!modalContext) {
-    throw new Error('CommonAlert must be used within a ModalProvider');
+    throw new Error(
+      "CommonAlertModal must be used within a CommonAlertProvider",
+    );
   }
+
   return modalContext;
 };

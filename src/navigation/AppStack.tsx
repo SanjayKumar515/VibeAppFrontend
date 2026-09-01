@@ -5,6 +5,8 @@ import HomeStack from "./HomeStack";
 import ChatRoom from "../screens/home/chat/chatRoom";
 
 import { Profile, Contacts } from "../screens";
+import CallScreen from "../screens/home/call/CallScreen";
+import IncomingCallScreen from "../screens/home/call/IncomingCallScreen";
 
 const Stack = createNativeStackNavigator<AppStackProps>();
 
@@ -15,6 +17,8 @@ const AppStack = () => {
       <Stack.Screen name="ChatRoom" component={ChatRoom} />
       <Stack.Screen name="Profile" component={Profile} />
       <Stack.Screen name="Contacts" component={Contacts} />
+      <Stack.Screen name="CallScreen" component={CallScreen} />
+      <Stack.Screen name="IncomingCallScreen" component={IncomingCallScreen} />
     </Stack.Navigator>
   );
 };
