@@ -175,7 +175,7 @@ const Status = () => {
         <View
           style={{ flex: 1, justifyContent: "center", alignItems: "center" }}
         >
-          <ActivityIndicator size="large" color="#00a884" />
+          <ActivityIndicator size="large" color="#0bb2cf" />
         </View>
       ) : (
         <FlatList
@@ -196,7 +196,7 @@ const Status = () => {
               <View
                 style={[
                   styles.statusRing,
-                  { borderColor: item.allRead ? "#d3d3d3" : "#00a884" },
+                  { borderColor: item.allRead ? "#d3d3d3" : "#0bb2cf" },
                 ]}
               >
                 <FastImage

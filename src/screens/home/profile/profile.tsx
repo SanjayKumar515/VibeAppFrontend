@@ -211,7 +211,7 @@ const Profile = () => {
                   <MaterialIcons
                     name="edit"
                     size={22}
-                    color={colors.text || "#00a884"}
+                    color={colors.text || "#0bb2cf"}
                   />
                 </TouchableOpacity>
               )}
@@ -223,7 +223,7 @@ const Profile = () => {
                   <MaterialIcons
                     name="check"
                     size={26}
-                    color={colors.text || "#00a884"}
+                    color={colors.text || "#0bb2cf"}
                   />
                 </TouchableOpacity>
               )}
@@ -281,7 +281,7 @@ const Profile = () => {
                   <MaterialIcons
                     name="edit"
                     size={22}
-                    color={colors.text || "#00a884"}
+                    color={colors.text || "#0bb2cf"}
                   />
                 </TouchableOpacity>
               )}
@@ -293,7 +293,7 @@ const Profile = () => {
                   <MaterialIcons
                     name="check"
                     size={26}
-                    color={colors.text || "#00a884"}
+                    color={colors.text || "#0bb2cf"}
                   />
                 </TouchableOpacity>
               )}
@@ -378,7 +378,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     bottom: 0,
     right: 0,
-    backgroundColor: "#00a884",
+    backgroundColor: "#0bb2cf",
     padding: 12,
     borderRadius: 24,
   },

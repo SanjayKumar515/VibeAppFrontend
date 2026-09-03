@@ -1,5 +1,6 @@
-import React from "react";
+import React, { useEffect } from "react";
 import FastImage from 'react-native-fast-image';
+import InCallManager from 'react-native-incall-manager';
 import { View, Text, StyleSheet, TouchableOpacity, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Icon from "react-native-vector-icons/Ionicons";
@@ -29,6 +30,17 @@ const IncomingCallScreen = () => {
   const route = useRoute<IncomingCallRouteProp>();
 
   const { callerId, callerName, callerAvatar, signal } = route.params as any;
+
+  useEffect(() => {
+    // Play ringtone on incoming call
+    // @ts-expect-error: react-native-incall-manager JS implementation handles optional arguments despite strict TS types
+    InCallManager.startRingtone('_DEFAULT_');
+
+    return () => {
+      // Stop ringtone when the screen unmounts (accepted/declined/missed)
+      InCallManager.stopRingtone();
+    };
+  }, []);
 
   const acceptCall = () => {
     navigation.replace("CallScreen", {

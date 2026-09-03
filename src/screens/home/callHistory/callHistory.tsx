@@ -112,7 +112,7 @@ const CallHistory = () => {
         <Icon
           name={item.mode === "video" ? "videocam" : "call"}
           size={22}
-          color={colors.tabBarActive || "#00a884"}
+          color={colors.tabBarActive || "#0bb2cf"}
         />
       </TouchableOpacity>
     </TouchableOpacity>
@@ -164,7 +164,7 @@ const CallHistory = () => {
       {/* Call List */}
       {isLoading ? (
         <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-          <ActivityIndicator size="large" color={colors.tabBarActive || "#00a884"} />
+          <ActivityIndicator size="large" color={colors.tabBarActive || "#0bb2cf"} />
         </View>
       ) : (
         <FlatList
@@ -206,7 +206,7 @@ const CallHistory = () => {
       <TouchableOpacity
         style={[
           styles.fab,
-          { backgroundColor: colors.tabBarActive || "#00a884" },
+          { backgroundColor: colors.tabBarActive || "#0bb2cf" },
         ]}
       >
         <MaterialIcons name="add-call" size={26} color="#fff" />
@@ -249,7 +249,7 @@ const getStyles = (colors: any, isDarkMode: boolean) =>
       borderRadius: 8,
     },
     activeTab: {
-      backgroundColor: colors.tabBarActive || "#00a884",
+      backgroundColor: colors.tabBarActive || "#0bb2cf",
     },
     tabText: {
       fontSize: 14,

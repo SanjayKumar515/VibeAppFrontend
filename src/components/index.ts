@@ -3,6 +3,6 @@ export { default as Button } from './Button/button';
 export { default as ImagePickerModal } from './ImagePickerModal/ImagePickerModal';
 import { CommonImagePicker } from './CommonImagePicker/CommonImagePicker';
 import { CommonLoader } from './CommonLoader/commonLoader';
-import { CommonAlertModal } from './CommonAlertModal/commonAlertModal';
+import { useCommonAlertModal } from './CommonAlertModal/commonAlertModal';
 
-export { CommonImagePicker, CommonLoader, CommonAlertModal };
+export { CommonImagePicker, CommonLoader, useCommonAlertModal };

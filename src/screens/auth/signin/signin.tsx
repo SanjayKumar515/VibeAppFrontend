@@ -25,11 +25,13 @@ import { jwtDecode } from "jwt-decode";
 
 import { CommonLoader } from "../../../components/CommonLoader/commonLoader";
 import { getFcmToken } from "../../../services/notificationService";
+import { useCommonAlertModal } from "../../../components";
 
 const Signin = () => {
   const { colors } = useTheme();
   const styles = getStyles(colors);
   const { showLoader, hideLoader } = CommonLoader();
+  const { showAlert, hideAlert } = useCommonAlertModal();
 
   const dispatch = useDispatch();
 
@@ -40,7 +42,9 @@ const Signin = () => {
   const handleSignInWithPhoneNumber = async () => {
     Keyboard.dismiss();
     if (!phoneNumber) {
-      Alert.alert("Error", "Please enter your phone number.");
+      showAlert("Error", "Please enter your phone number.", "OK", () => {
+        hideAlert();
+      });
       return;
     }
 
@@ -64,7 +68,9 @@ const Signin = () => {
 
       if (response.success) {
         setIsOtpSent(true);
-        Alert.alert("Success", "SMS verification code sent.");
+        showAlert("Success", "SMS verification code sent.", "OK", () => {
+          hideAlert();
+        });
       } else {
         throw new Error(response.msg || "Failed to send OTP");
       }
@@ -79,13 +85,17 @@ const Signin = () => {
   const confirmCode = async () => {
     Keyboard.dismiss();
     if (!code) {
-      Alert.alert("Error", "Please enter the 6-digit code.");
+      showAlert("Error", "Please enter the 6-digit code.", "OK", () => {
+        hideAlert();
+      });
       return;
     }
 
     try {
       if (!isOtpSent) {
-        Alert.alert("Error", "Please request OTP first");
+        showAlert("Error", "Please request OTP first", "OK", () => {
+          hideAlert();
+        });
         return;
       }
 
@@ -111,8 +121,8 @@ const Signin = () => {
         hideLoader();
 
         // Persist session
-        await storage.setItem('token', backendToken);
-        await storage.setItem('user', userPayload);
+        await storage.setItem("token", backendToken);
+        await storage.setItem("user", userPayload);
 
         dispatch(
           signIn({
@@ -126,10 +136,14 @@ const Signin = () => {
     } catch (error: any) {
       hideLoader();
       console.log("Confirm OTP Error:", error);
-      Alert.alert(
+      showAlert(
         "Verification Failed",
         error?.message ||
           "The code you entered is incorrect. Please try again.",
+        "OK",
+        () => {
+          hideAlert();
+        },
       );
     }
   };

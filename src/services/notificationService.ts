@@ -1,4 +1,5 @@
 import { Alert } from "react-native";
+import notifee, { AndroidImportance } from '@notifee/react-native';
 
 import { requestNotifications, RESULTS } from "react-native-permissions";
 
@@ -18,6 +19,7 @@ const messagingInstance = getMessaging();
  */
 export const requestUserPermission = async () => {
   try {
+    await notifee.requestPermission();
     const { status, settings } = await requestNotifications([
       "alert",
       "badge",
@@ -97,12 +99,47 @@ export const notificationListener = () => {
 
       console.log("================================");
 
+      
       if (remoteMessage.notification) {
-        Alert.alert(
-          remoteMessage.notification.title || "Notification",
+        await notifee.createChannel({
+          id: 'default',
+          name: 'Default Channel',
+          importance: AndroidImportance.HIGH,
+        });
 
-          remoteMessage.notification.body || "You have a new message",
-        );
+        await notifee.displayNotification({
+          title: remoteMessage.notification.title || 'Notification',
+          body: remoteMessage.notification.body || 'You have a new message',
+          android: {
+            channelId: 'default',
+            importance: AndroidImportance.HIGH,
+            pressAction: {
+              id: 'default',
+              launchActivity: 'default',
+            },
+          },
+        });
+      } else if (remoteMessage.data && remoteMessage.data.type === 'NEW_MESSAGE') {
+        // Handle foreground data messages for NEW_MESSAGE
+        await notifee.createChannel({
+          id: 'messages',
+          name: 'Messages',
+          importance: AndroidImportance.HIGH,
+        });
+
+        await notifee.displayNotification({
+          title: remoteMessage.data.senderName || 'New Message',
+          body: remoteMessage.data.content || 'You received a new message',
+          data: remoteMessage.data,
+          android: {
+            channelId: 'messages',
+            importance: AndroidImportance.HIGH,
+            pressAction: {
+              id: 'default',
+              launchActivity: 'default',
+            },
+          },
+        });
       }
     },
   );

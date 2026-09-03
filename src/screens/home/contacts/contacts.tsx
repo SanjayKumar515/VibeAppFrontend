@@ -57,7 +57,8 @@ const Contacts = () => {
         navigation.navigate('ChatRoom', { 
           chatId: response.data._id, 
           name: displayName, 
-          avatar: displayAvatar 
+          avatar: displayAvatar,
+          targetUserId: otherParticipant?._id
         });
       } else {
         Alert.alert('Error', response.msg || 'Failed to open conversation');

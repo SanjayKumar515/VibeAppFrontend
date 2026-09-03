@@ -46,7 +46,7 @@ const getStyles = (colors: any) =>
       marginBottom: 30,
     },
     button: {
-      backgroundColor: colors.PRIMARY[400] || '#00a884',
+      backgroundColor: colors.PRIMARY[400] || '#0bb2cf',
       paddingVertical: 12,
       paddingHorizontal: 24,
       borderRadius: 24,

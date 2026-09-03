@@ -84,10 +84,18 @@ export const CommonAlertProvider: React.FC<{
         <View style={styles.modalViewContainer}>
           <View style={styles.modalView}>
             {/* Title */}
-            <TextView style={styles.modalTitleText}>
+            <TextView
+              style={[
+                styles.modalTitleText,
+                {
+                  color: (modalTitle || "").toLowerCase().includes("success")
+                    ? "green"
+                    : "red",
+                },
+              ]}
+            >
               {modalTitle || "Something went wrong"}
             </TextView>
-
             {/* Message */}
             <TextView style={styles.modalText}>{modalText}</TextView>
 
@@ -95,10 +103,21 @@ export const CommonAlertProvider: React.FC<{
             <View style={styles.actionButtonView}>
               <Button
                 title={modalActionButtonText}
-                buttonColor={colors.PRIMARY[300]}
-                style={{ width: wp(35) }}
+                buttonColor={colors.PRIMARY[100]}
+                style={{
+                  width: wp(25),
+                  backgroundColor: colors.tabBarActive,
+                  paddingVertical: 12,
+                  paddingHorizontal: 24,
+                  borderRadius: 24,
+                  elevation: 2,
+                  shadowColor: "#000",
+                  shadowOffset: { width: 0, height: 1 },
+                  shadowOpacity: 0.2,
+                  shadowRadius: 1.5,
+                }}
                 onPress={modalActionPress}
-                textColor={colors.PRIMARY[100]}
+                textColor={colors.PRIMARY[300]}
               />
             </View>
 
@@ -122,7 +141,7 @@ export const CommonAlertProvider: React.FC<{
   );
 };
 
-export const CommonAlertModal = (): ModalProps => {
+export const useCommonAlertModal = (): ModalProps => {
   const modalContext = useContext(ModalContext);
 
   if (!modalContext) {

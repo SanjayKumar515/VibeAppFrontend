@@ -128,7 +128,7 @@ const getStyles = (colors: ThemeColors) =>
       width: 48,
       height: 48,
       borderRadius: 24,
-      backgroundColor: "#00A884",
+      backgroundColor: "#0bb2cf",
       justifyContent: "center",
       alignItems: "center",
     },

@@ -1,47 +1,71 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, PermissionsAndroid, Platform } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import Icon from 'react-native-vector-icons/Ionicons';
-import { useNavigation, useRoute } from '@react-navigation/native';
-import { RTCView, mediaDevices, RTCPeerConnection, RTCIceCandidate, RTCSessionDescription } from 'react-native-webrtc';
-import InCallManager from 'react-native-incall-manager';
-import { socketService } from '../../../services/socketService';
-import { useSelector } from 'react-redux';
-import { RootState } from '../../../store';
+import React, { useState, useEffect, useRef } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  PermissionsAndroid,
+  Platform,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import Icon from "react-native-vector-icons/Ionicons";
+import { useNavigation, useRoute } from "@react-navigation/native";
+import {
+  RTCView,
+  mediaDevices,
+  RTCPeerConnection,
+  RTCIceCandidate,
+  RTCSessionDescription,
+} from "react-native-webrtc";
+import InCallManager from "react-native-incall-manager";
+import { socketService } from "../../../services/socketService";
+import { useSelector } from "react-redux";
+import { RootState } from "../../../store";
 
-const configuration = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+const configuration = {
+  iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+};
 
 const CallScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
-  const { targetUserId, targetName, isCaller, isVideo = true, incomingSignal } = route.params as any;
+  const {
+    targetUserId,
+    targetName,
+    isCaller,
+    isVideo = true,
+    incomingSignal,
+  } = route.params as any;
   const currentUser = useSelector((state: RootState) => state.auth.user);
 
   const [localStream, setLocalStream] = useState<any>(null);
   const [remoteStream, setRemoteStream] = useState<any>(null);
   const [isMuted, setIsMuted] = useState(false);
-  
+
   const pc = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<any>(null);
+  const pendingCandidates = useRef<any[]>([]);
 
   useEffect(() => {
     const setupWebrtc = async () => {
       try {
-        if (Platform.OS === 'android') {
+        if (Platform.OS === "android") {
           const granted = await PermissionsAndroid.requestMultiple([
             PermissionsAndroid.PERMISSIONS.CAMERA,
             PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
           ]);
           if (
-            granted['android.permission.CAMERA'] !== PermissionsAndroid.RESULTS.GRANTED ||
-            granted['android.permission.RECORD_AUDIO'] !== PermissionsAndroid.RESULTS.GRANTED
+            granted["android.permission.CAMERA"] !==
+              PermissionsAndroid.RESULTS.GRANTED ||
+            granted["android.permission.RECORD_AUDIO"] !==
+              PermissionsAndroid.RESULTS.GRANTED
           ) {
-            console.error('Camera or Mic permission denied');
+            console.error("Camera or Mic permission denied");
             return;
           }
         }
 
-        InCallManager.start({ media: isVideo ? 'video' : 'audio' });
+        InCallManager.start({ media: isVideo ? "video" : "audio" });
         // Set speakerphone on for video calls, off for audio calls
         InCallManager.setForceSpeakerphoneOn(isVideo);
 
@@ -61,16 +85,16 @@ const CallScreen = () => {
         });
 
         // Listen for remote track
-        peerConnection.ontrack = (event) => {
+        peerConnection.ontrack = (event: any) => {
           if (event.streams && event.streams[0]) {
             setRemoteStream(event.streams[0]);
           }
         };
 
         // Handle ICE candidates
-        peerConnection.onicecandidate = (event) => {
+        peerConnection.onicecandidate = (event: any) => {
           if (event.candidate) {
-            socketService.emit('iceCandidate', {
+            socketService.emit("iceCandidate", {
               to: targetUserId,
               candidate: event.candidate,
               from: currentUser?.id,
@@ -82,27 +106,52 @@ const CallScreen = () => {
           // Caller creates offer
           const offer = await peerConnection.createOffer({});
           await peerConnection.setLocalDescription(offer);
-          socketService.emit('callUser', {
+          socketService.emit("callUser", {
             userToCall: targetUserId,
-            signalData: offer,
+            // Omitting signalData to prevent FCM push notification failure due to payload size limits (> 4KB)
             from: currentUser?.id,
             name: currentUser?.name,
-            avatar: currentUser?.avatar
+            avatar: currentUser?.avatar,
           });
         } else {
           // Receiver sets remote description and creates answer
           if (incomingSignal) {
-            await peerConnection.setRemoteDescription(new RTCSessionDescription(incomingSignal));
-            const answer = await peerConnection.createAnswer();
-            await peerConnection.setLocalDescription(answer);
-            socketService.emit('answerCall', {
-              to: targetUserId,
-              signal: answer
+            try {
+              await peerConnection.setRemoteDescription(
+                new RTCSessionDescription(incomingSignal),
+              );
+              for (const candidate of pendingCandidates.current) {
+                try {
+                  await peerConnection.addIceCandidate(
+                    new RTCIceCandidate(candidate),
+                  );
+                } catch (e) {
+                  console.warn(
+                    "Error adding queued ICE candidate (receiver)",
+                    e,
+                  );
+                }
+              }
+              pendingCandidates.current = [];
+              const answer = await peerConnection.createAnswer();
+              await peerConnection.setLocalDescription(answer);
+              socketService.emit("answerCall", {
+                to: targetUserId,
+                signal: answer,
+              });
+            } catch (err) {
+              console.error("Error in receiver setup", err);
+            }
+          } else {
+            // Signal was omitted from push/socket to save size, request it directly from the caller now!
+            socketService.emit("webrtcSignal", {
+              targetUserId: targetUserId,
+              signal: { type: "request_offer" }
             });
           }
         }
       } catch (err) {
-        console.error('Failed to setup WebRTC', err);
+        console.error("Failed to setup WebRTC", err);
       }
     };
 
@@ -110,15 +159,39 @@ const CallScreen = () => {
 
     // Socket listeners for signaling
     const handleCallAccepted = async (data: any) => {
-      if (pc.current && data.signal) {
-        await pc.current.setRemoteDescription(new RTCSessionDescription(data.signal));
+      try {
+        if (pc.current && data.signal) {
+          await pc.current.setRemoteDescription(
+            new RTCSessionDescription(data.signal),
+          );
+          for (const candidate of pendingCandidates.current) {
+            try {
+              await pc.current.addIceCandidate(new RTCIceCandidate(candidate));
+            } catch (e) {
+              console.warn("Error adding queued ICE candidate (caller)", e);
+            }
+          }
+          pendingCandidates.current = [];
+        }
+      } catch (err) {
+        console.error("Error handling call accepted", err);
       }
     };
 
     const handleIceCandidate = async (data: any) => {
       if (data.from === currentUser?.id) return;
-      if (pc.current && data.candidate) {
-        await pc.current.addIceCandidate(new RTCIceCandidate(data.candidate));
+      try {
+        if (pc.current && data.candidate) {
+          if (pc.current.remoteDescription) {
+            await pc.current.addIceCandidate(
+              new RTCIceCandidate(data.candidate),
+            );
+          } else {
+            pendingCandidates.current.push(data.candidate);
+          }
+        }
+      } catch (err) {
+        console.warn("Error adding ICE candidate", err);
       }
     };
 
@@ -127,15 +200,48 @@ const CallScreen = () => {
       navigation.goBack();
     };
 
-    socketService.on('callAccepted', handleCallAccepted);
-    socketService.on('iceCandidate', handleIceCandidate);
-    socketService.on('callEnded', handleEndCall);
+    const handleWebrtcSignal = async (data: any) => {
+      if (data.senderId === targetUserId) {
+        if (data.signal?.type === "request_offer" && isCaller && pc.current?.localDescription) {
+          socketService.emit("webrtcSignal", {
+            targetUserId: targetUserId,
+            signal: pc.current.localDescription
+          });
+        } else if (data.signal?.type === "offer" && !isCaller) {
+          try {
+            await pc.current?.setRemoteDescription(new RTCSessionDescription(data.signal));
+            for (const candidate of pendingCandidates.current) {
+              try {
+                await pc.current?.addIceCandidate(new RTCIceCandidate(candidate));
+              } catch (e) {
+                console.warn("Error adding queued ICE candidate (receiver)", e);
+              }
+            }
+            pendingCandidates.current = [];
+            const answer = await pc.current?.createAnswer();
+            await pc.current?.setLocalDescription(answer);
+            socketService.emit("answerCall", {
+              to: targetUserId,
+              signal: answer,
+            });
+          } catch (err) {
+            console.error("Error setting offer via webrtcSignal", err);
+          }
+        }
+      }
+    };
+
+    socketService.on("callAccepted", handleCallAccepted);
+    socketService.on("iceCandidate", handleIceCandidate);
+    socketService.on("callEnded", handleEndCall);
+    socketService.on("webrtcSignal", handleWebrtcSignal);
 
     return () => {
       cleanup();
-      socketService.off('callAccepted', handleCallAccepted);
-      socketService.off('iceCandidate', handleIceCandidate);
-      socketService.off('callEnded', handleEndCall);
+      socketService.off("callAccepted", handleCallAccepted);
+      socketService.off("iceCandidate", handleIceCandidate);
+      socketService.off("callEnded", handleEndCall);
+      socketService.off("webrtcSignal", handleWebrtcSignal);
     };
   }, []);
 
@@ -152,7 +258,7 @@ const CallScreen = () => {
   };
 
   const endCall = () => {
-    socketService.emit('endCall', { to: targetUserId });
+    socketService.emit("endCall", { to: targetUserId });
     cleanup();
     navigation.goBack();
   };
@@ -178,7 +284,9 @@ const CallScreen = () => {
       ) : (
         <View style={styles.remoteVideoPlaceholder}>
           <Text style={styles.placeholderText}>
-            {remoteStream ? `${targetName} (Audio Call)` : `Calling ${targetName}...`}
+            {remoteStream
+              ? `${targetName} (Audio Call)`
+              : `Calling ${targetName}...`}
           </Text>
         </View>
       )}
@@ -196,11 +304,19 @@ const CallScreen = () => {
       {/* Controls */}
       <View style={styles.controlsContainer}>
         <TouchableOpacity style={styles.controlBtn} onPress={toggleMute}>
-          <Icon name={isMuted ? 'mic-off' : 'mic'} size={28} color="#fff" />
+          <Icon name={isMuted ? "mic-off" : "mic"} size={28} color="#fff" />
         </TouchableOpacity>
-        
-        <TouchableOpacity style={[styles.controlBtn, styles.endCallBtn]} onPress={endCall}>
-          <Icon name="call" size={28} color="#fff" style={{ transform: [{ rotate: '135deg' }] }} />
+
+        <TouchableOpacity
+          style={[styles.controlBtn, styles.endCallBtn]}
+          onPress={endCall}
+        >
+          <Icon
+            name="call"
+            size={28}
+            color="#fff"
+            style={{ transform: [{ rotate: "135deg" }] }}
+          />
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -210,50 +326,50 @@ const CallScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: "#000",
   },
   remoteVideo: {
     flex: 1,
   },
   remoteVideoPlaceholder: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   placeholderText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 20,
-    fontWeight: 'bold',
+    fontWeight: "bold",
   },
   localVideo: {
-    position: 'absolute',
+    position: "absolute",
     right: 20,
     bottom: 120,
     width: 100,
     height: 150,
     borderRadius: 10,
-    backgroundColor: '#333',
-    overflow: 'hidden',
+    backgroundColor: "#333",
+    overflow: "hidden",
   },
   controlsContainer: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 40,
     left: 0,
     right: 0,
-    flexDirection: 'row',
-    justifyContent: 'space-evenly',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-evenly",
+    alignItems: "center",
   },
   controlBtn: {
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "rgba(255,255,255,0.2)",
+    justifyContent: "center",
+    alignItems: "center",
   },
   endCallBtn: {
-    backgroundColor: '#ff4444',
+    backgroundColor: "#ff4444",
   },
 });
 

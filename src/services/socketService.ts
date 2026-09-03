@@ -1,6 +1,8 @@
 import { io, Socket } from 'socket.io-client';
 import { BASE_URL } from '../constant/config';
 
+import { getFcmToken } from './notificationService';
+
 class SocketService {
   public socket: Socket | null = null;
 
@@ -14,9 +16,16 @@ class SocketService {
         },
       });
 
-      this.socket.on('connect', () => {
+      this.socket.on('connect', async () => {
         console.log('Socket connected successfully:', this.socket?.id);
         this.socket?.emit('userOnline', {});
+        
+        try {
+          const fcmToken = await getFcmToken();
+          if (fcmToken) {
+            this.socket?.emit('updateFcmToken', fcmToken);
+          }
+        } catch(e) {}
       });
 
       this.socket.on('disconnect', (reason) => {

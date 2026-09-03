@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from "react";
-import FastImage from 'react-native-fast-image';
+import FastImage from "react-native-fast-image";
 import {
   View,
   Text,
@@ -33,6 +33,7 @@ import {
   Send,
   SendProps,
   Composer,
+  MessageText,
 } from "react-native-gifted-chat";
 import { useSelector, useDispatch } from "react-redux";
 import { RootState } from "../../../store";
@@ -47,21 +48,27 @@ import {
 } from "react-native-responsive-screen";
 import { CommonImagePicker, ImagePickerModal } from "../../../components";
 import { Colors } from "../../../constant";
+import EmojiPicker from "rn-emoji-keyboard";
+import { useCommonAlertModal } from "../../../components";
 
 type ChatRoomRouteProp = RouteProp<AppStackProps, "ChatRoom">;
 
 const ChatRoom = () => {
   const { colors, isDarkMode } = useTheme();
-  const styles = getStyles(colors);
+  const styles = React.useMemo(() => getStyles(colors), [colors]);
   const navigation = useNavigation<NavigationProp<AppStackProps>>();
   const route = useRoute<ChatRoomRouteProp>();
   const { chatId, name, avatar, targetUserId } = route.params;
   const insets = useSafeAreaInsets();
   const dispatch = useDispatch();
-
+  const { showAlert, hideAlert } = useCommonAlertModal();
   const currentUser = useSelector((state: RootState) => state.auth.user);
 
   const [messages, setMessages] = useState<IMessage[]>([]);
+  const [text, setText] = useState("");
+  const [editingMessage, setEditingMessage] = useState<IMessage | null>(null);
+
+  const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
   const [isAttachmentModalVisible, setIsAttachmentModalVisible] =
     useState(false);
 
@@ -96,7 +103,7 @@ const ChatRoom = () => {
                     setMessages([]);
                   },
                 },
-              ]
+              ],
             );
           },
         },
@@ -112,12 +119,14 @@ const ChatRoom = () => {
                   text: "Delete",
                   style: "destructive",
                   onPress: () => {
-                    socketService.emit("deleteChat", { conversationId: chatId });
+                    socketService.emit("deleteChat", {
+                      conversationId: chatId,
+                    });
                     setMessages([]);
                     navigation.goBack();
                   },
                 },
-              ]
+              ],
             );
           },
         },
@@ -134,75 +143,113 @@ const ChatRoom = () => {
                   style: "destructive",
                   onPress: () => {
                     if (targetUserId) {
-                      socketService.emit("blockUser", { userIdToBlock: targetUserId });
-                      socketService.emit("deleteChat", { conversationId: chatId });
+                      socketService.emit("blockUser", {
+                        userIdToBlock: targetUserId,
+                      });
+                      socketService.emit("deleteChat", {
+                        conversationId: chatId,
+                      });
                       navigation.goBack();
                     }
                   },
                 },
-              ]
+              ],
             );
           },
         },
         { text: "Cancel", style: "cancel" },
       ],
-      { cancelable: true }
+      { cancelable: true },
     );
   };
+
+  const onSend = useCallback(
+    (newMessages: IMessage[] = []) => {
+      const msg = newMessages[0];
+
+      if (editingMessage) {
+        socketService.emit("editMessage", {
+          messageId: editingMessage._id,
+          content: msg.text,
+          conversationId: chatId,
+        });
+        setEditingMessage(null);
+        setText("");
+      } else {
+        socketService.emit("newMessage", {
+          conversationId: chatId,
+          content: msg.text,
+          attachement: msg.image,
+          audio: msg.audio,
+          sender: {
+            id: currentUser?.id,
+            name: currentUser?.name || "Me",
+            avatar: currentUser?.avatar || "",
+          },
+        });
+      }
+    },
+    [chatId, currentUser, editingMessage],
+  );
 
   const typingTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
 
-  const handleAttachmentSelect = async (
-    type: "Camera" | "Gallery" | "Document",
-  ) => {
-    setIsAttachmentModalVisible(false);
+  const handleAttachmentSelect = useCallback(
+    async (type: "Camera" | "Gallery" | "Document") => {
+      setIsAttachmentModalVisible(false);
 
-    try {
-      const result = await CommonImagePicker(type, 1, false);
+      try {
+        const result = await CommonImagePicker(type, 1, false);
 
-      if (result) {
-        let imageUri = undefined;
-        let text = "";
+        if (result) {
+          let imageUri = undefined;
+          let text = "";
 
-        if (type === "Document") {
-          const doc = (result as any)[0];
-          text = `📄 ${doc.name || "Document"}`;
-        } else {
-          const img = result as any;
-          imageUri = img.path;
+          if (type === "Document") {
+            const doc = (result as any)[0];
+            text = `📄 ${doc.name || "Document"}`;
+          } else {
+            const img = result as any;
+            imageUri = img.path;
+          }
+
+          const newMessage: IMessage = {
+            _id: Math.round(Math.random() * 1000000),
+            text: text,
+            createdAt: new Date(),
+            user: {
+              _id: 1,
+              name: "Me",
+            },
+            image: imageUri,
+          };
+
+          onSend([newMessage]);
         }
-
-        const newMessage: IMessage = {
-          _id: Math.round(Math.random() * 1000000),
-          text: text,
-          createdAt: new Date(),
-          user: {
-            _id: 1,
-            name: "Me",
-          },
-          image: imageUri,
-        };
-
-        onSend([newMessage]);
+      } catch (error) {
+        console.log("Picker Error: ", error);
       }
-    } catch (error) {
-      console.log("Picker Error: ", error);
-    }
-  };
+    },
+    [onSend],
+  );
 
   const initiateVideoCall = () => {
-    if (targetUserId && !targetStatus.isOnline) {
-      Alert.alert(
-        "User Offline",
+    if (!targetUserId || !targetStatus.isOnline) {
+      showAlert(
+        "Offline",
         "This user is currently offline. You cannot call them right now.",
+        "OK",
+        () => {
+          hideAlert();
+        },
       );
       return;
     }
 
     navigation.navigate("CallScreen", {
-      targetUserId: chatId,
+      targetUserId: targetUserId || "",
       targetName: name,
       isCaller: true,
       isVideo: true,
@@ -210,16 +257,20 @@ const ChatRoom = () => {
   };
 
   const initiateAudioCall = () => {
-    if (targetUserId && !targetStatus.isOnline) {
-      Alert.alert(
-        "User Offline",
+    if (!targetUserId || !targetStatus.isOnline) {
+      showAlert(
+        "Offline",
         "This user is currently offline. You cannot call them right now.",
+        "OK",
+        () => {
+          hideAlert();
+        },
       );
       return;
     }
 
     navigation.navigate("CallScreen", {
-      targetUserId: chatId,
+      targetUserId: targetUserId || "",
       targetName: name,
       isCaller: true,
       isVideo: false,
@@ -228,6 +279,7 @@ const ChatRoom = () => {
 
   useEffect(() => {
     dispatch(setActiveChatRoom(chatId));
+    socketService.emit("markAsRead", { conversationId: chatId });
 
     let hasReceivedData = false;
 
@@ -246,6 +298,9 @@ const ChatRoom = () => {
           },
           image: msg.attachement,
           audio: msg.audio,
+          status: msg.status || "sent",
+          isEdited: msg.isEdited || false,
+          isDeleted: msg.isDeleted || false,
         }));
 
         const sortedMessages = formattedMessages.sort(
@@ -270,17 +325,76 @@ const ChatRoom = () => {
             },
             image: response.data.attachement,
             audio: response.data.audio,
+            status: response.data.status || "sent",
+            isEdited: response.data.isEdited || false,
+            isDeleted: response.data.isDeleted || false,
           };
 
           setMessages((previousMessages) =>
             GiftedChat.append(previousMessages, [newMsg]),
           );
+
+          if (response.data.sender.id !== currentUser?.id) {
+            socketService.emit("markAsRead", { conversationId: chatId });
+          }
         }
+      }
+    };
+
+    const handleMessagesRead = (data: any) => {
+      if (data.conversationId === chatId) {
+        setMessages((prevMessages) =>
+          prevMessages.map((msg) =>
+            msg.user._id !== data.readerId && msg.status !== "read"
+              ? { ...msg, status: "read" }
+              : msg
+          )
+        );
+      }
+    };
+
+    const handleMessagesDelivered = (data: any) => {
+      if (data.conversationId === chatId) {
+        setMessages((prevMessages) =>
+          prevMessages.map((msg) =>
+            msg._id === data.messageId && msg.status === "sent"
+              ? { ...msg, status: "delivered" }
+              : msg
+          )
+        );
+      }
+    };
+
+    const handleMessageEdited = (data: any) => {
+      if (data.conversationId === chatId) {
+        setMessages((prevMessages) =>
+          prevMessages.map((msg) =>
+            msg._id === data.messageId
+              ? { ...msg, text: data.content, isEdited: true }
+              : msg
+          )
+        );
+      }
+    };
+
+    const handleMessageDeleted = (data: any) => {
+      if (data.conversationId === chatId) {
+        setMessages((prevMessages) =>
+          prevMessages.map((msg) =>
+            msg._id === data.messageId
+              ? { ...msg, text: "🚫 This message was deleted", isDeleted: true, image: undefined, audio: undefined }
+              : msg
+          )
+        );
       }
     };
 
     socketService.on("newMessage", handleNewMessage);
     socketService.on("getMessages", handleGetMessages);
+    socketService.on("messagesRead", handleMessagesRead);
+    socketService.on("messagesDelivered", handleMessagesDelivered);
+    socketService.on("messageEdited", handleMessageEdited);
+    socketService.on("messageDeleted", handleMessageDeleted);
 
     const handleUserStatusResult = (data: any) => {
       if (data.userId === targetUserId) {
@@ -340,6 +454,10 @@ const ChatRoom = () => {
 
       socketService.off("getMessages", handleGetMessages);
       socketService.off("newMessage", handleNewMessage);
+      socketService.off("messagesRead", handleMessagesRead);
+      socketService.off("messagesDelivered", handleMessagesDelivered);
+      socketService.off("messageEdited", handleMessageEdited);
+      socketService.off("messageDeleted", handleMessageDeleted);
 
       socketService.off("userStatusResult");
       socketService.off("userStatusChanged");
@@ -350,26 +468,7 @@ const ChatRoom = () => {
     };
   }, [chatId, dispatch]);
 
-  const onSend = useCallback(
-    (newMessages: IMessage[] = []) => {
-      const msg = newMessages[0];
-
-      socketService.emit("newMessage", {
-        conversationId: chatId,
-        content: msg.text,
-        attachement: msg.image,
-        audio: msg.audio,
-        sender: {
-          id: currentUser?.id,
-          name: currentUser?.name || "Me",
-          avatar: currentUser?.avatar || "",
-        },
-      });
-    },
-    [chatId, currentUser],
-  );
-
-  const onInputTextChanged = (text: string) => {
+  const handleTyping = (text: string) => {
     if (text.length > 0) {
       socketService.emit("typing", {
         conversationId: chatId,
@@ -398,72 +497,77 @@ const ChatRoom = () => {
     }
   };
 
-  const renderBubble = (props: any) => {
-    return (
-      <Bubble
-        {...props}
-        wrapperStyle={{
-          right: {
-            backgroundColor: isDarkMode ? "#005c4b" : "#d9fdd3",
-            borderBottomRightRadius: 0,
-            marginBottom: hp(0.5),
-          },
-          left: {
-            backgroundColor: isDarkMode ? "#202c33" : "#efeeeeff",
-            borderBottomLeftRadius: 0,
-            marginBottom: hp(0.5),
-          },
-        }}
-        textStyle={{
-          right: {
-            color: colors.text,
-          },
-          left: {
-            color: colors.text,
-          },
-        }}
-        timeTextStyle={{
-          right: {
-            color: "gray",
-          },
-          left: {
-            color: "gray",
-          },
-        }}
-        renderTicks={(currentMessage: any) => {
-          if (currentMessage?.user?._id !== currentUser?.id) {
-            return null;
-          }
+  const renderBubble = useCallback(
+    (props: any) => {
+      return (
+        <Bubble
+          {...props}
+          wrapperStyle={{
+            right: {
+              backgroundColor: isDarkMode ? "#005c4b" : "#d9fdd3",
+              borderBottomRightRadius: 0,
+              marginBottom: hp(0.5),
+            },
+            left: {
+              backgroundColor: isDarkMode ? "#202c33" : "#efeeeeff",
+              borderBottomLeftRadius: 0,
+              marginBottom: hp(0.5),
+            },
+          }}
+          textStyle={{
+            right: {
+              color: props.currentMessage?.isDeleted ? "gray" : colors.text,
+              fontStyle: props.currentMessage?.isDeleted ? "italic" : "normal",
+            },
+            left: {
+              color: props.currentMessage?.isDeleted ? "gray" : colors.text,
+              fontStyle: props.currentMessage?.isDeleted ? "italic" : "normal",
+            },
+          }}
+          timeTextStyle={{
+            right: {
+              color: "gray",
+            },
+            left: {
+              color: "gray",
+            },
+          }}
+          renderTicks={(currentMessage: any) => {
+            if (currentMessage?.user?._id !== currentUser?.id) {
+              return null;
+            }
 
-          const status = currentMessage.status || "read";
+            const status = currentMessage.status || "sent";
 
-          if (status === "read") {
+            if (status === "read") {
+              return (
+                <View style={{ marginRight: 10, marginBottom: 5 }}>
+                  <Icon name="checkmark-done" size={16} color="#34B7F1" />
+                </View>
+              );
+            }
+
+            if (status === "delivered") {
+              return (
+                <View style={{ marginRight: 10, marginBottom: 5 }}>
+                  <Icon name="checkmark-done" size={16} color="gray" />
+                </View>
+              );
+            }
+
             return (
               <View style={{ marginRight: 10, marginBottom: 5 }}>
-                <Icon name="checkmark-done" size={16} color="#34B7F1" />
+                <Icon name="checkmark" size={16} color="gray" />
               </View>
             );
-          }
+          }}
+        />
+      );
+    },
+    [isDarkMode, colors, currentUser, hp],
+  );
 
-          if (status === "delivered") {
-            return (
-              <View style={{ marginRight: 10, marginBottom: 5 }}>
-                <Icon name="checkmark-done" size={16} color="gray" />
-              </View>
-            );
-          }
-
-          return (
-            <View style={{ marginRight: 10, marginBottom: 5 }}>
-              <Icon name="checkmark" size={16} color="gray" />
-            </View>
-          );
-        }}
-      />
-    );
-  };
-
-  const renderMessageAudio = (props: any) => {
+  const renderMessageAudio = useCallback((props: any) => {
     const { currentMessage } = props;
 
     return (
@@ -492,209 +596,328 @@ const ChatRoom = () => {
         </Text>
       </View>
     );
-  };
+  }, []);
 
-  const renderInputToolbar = (props: any) => {
-    return (
-      <InputToolbar
-        {...props}
-        containerStyle={{
-          backgroundColor: "transparent",
-          borderTopWidth: 0,
-          paddingHorizontal: wp(2),
-          paddingVertical: hp(0.5),
-        }}
-        primaryStyle={{
-          alignItems: "flex-end",
-        }}
-      />
-    );
-  };
-
-  const renderComposer = (props: any) => {
-    return (
-      <View style={styles.inputBox}>
-        <TouchableOpacity style={{ padding: 12, paddingRight: 6 }}>
-          <Icon name="happy-outline" size={24} color={colors.textSecondary} />
-        </TouchableOpacity>
-
-        <Composer
+  const renderInputToolbar = useCallback(
+    (props: any) => {
+      return (
+        <InputToolbar
           {...props}
-          textInputStyle={styles.textInput}
-          onTextChanged={onInputTextChanged}
-        />
-
-        <TouchableOpacity
-          style={{ padding: 12, paddingLeft: 6 }}
-          onPress={() => handleAttachmentSelect("Document")}
-        >
-          <Icon name="attach" size={24} color={colors.textSecondary} />
-        </TouchableOpacity>
-
-        {(!props.text || props.text.trim().length === 0) && (
-          <TouchableOpacity
-            style={{ padding: 12, paddingLeft: 0 }}
-            onPress={() => setIsAttachmentModalVisible(true)}
-          >
-            <Icon
-              name="camera-outline"
-              size={24}
-              color={colors.textSecondary}
-            />
-          </TouchableOpacity>
-        )}
-      </View>
-    );
-  };
-
-  const renderSend = (props: SendProps<IMessage>) => {
-    return (
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-        }}
-      >
-
-        <Send
-          {...(props as any)}
           containerStyle={{
-            justifyContent: "flex-end",
-            alignItems: "center",
-            marginLeft: 8,
-            marginBottom: 0,
+            backgroundColor: "transparent",
+            borderTopWidth: 0,
+            paddingHorizontal: wp(2),
+            paddingVertical: hp(0.5),
           }}
-          disabled={!props.text || props.text.trim().length === 0}
-        >
-          <View
-            style={[
-              styles.sendButton,
-              {
-                display:
-                  props.text && props.text.trim().length > 0 ? "flex" : "none",
-              },
-            ]}
-          >
-            <MaterialIcons
-              name="send"
-              size={24}
-              color="#fff"
-              style={{ marginLeft: 4 }}
-            />
-          </View>
-        </Send>
+          primaryStyle={{
+            alignItems: "flex-end",
+          }}
+        />
+      );
+    },
+    [wp, hp],
+  );
 
-        {(!props.text || props.text.trim().length === 0) && (
-          <Pressable
-            style={[
-              styles.sendButton,
-              {
-                marginLeft: 8,
-                backgroundColor: Colors.PRIMARY[100],
-              },
-            ]}
+  const renderComposer = useCallback(
+    (props: any) => {
+      return (
+        <View style={styles.inputBox}>
+          <TouchableOpacity
+            style={{ padding: 12, paddingRight: 6 }}
+            onPress={() => {
+              Keyboard.dismiss();
+              setIsEmojiPickerOpen(true);
+            }}
           >
-            <MaterialIcons name="mic" size={24} color="#fff" />
-          </Pressable>
-        )}
-      </View>
-    );
-  };
+            <Icon name="happy-outline" size={24} color={colors.textSecondary} />
+          </TouchableOpacity>
+
+          <Composer
+            {...props}
+            textInputStyle={styles.textInput}
+            // The prop onTextChanged handles the internal composer state update, we also hook into it from GiftedChat's onInputTextChanged
+          />
+
+          <TouchableOpacity
+            style={{ padding: 12, paddingLeft: 6 }}
+            onPress={() => handleAttachmentSelect("Document")}
+          >
+            <Icon name="attach" size={24} color={colors.textSecondary} />
+          </TouchableOpacity>
+
+          {(!props.text || props.text.trim().length === 0) && (
+            <TouchableOpacity
+              style={{ padding: 12, paddingLeft: 0 }}
+              onPress={() => setIsAttachmentModalVisible(true)}
+            >
+              <Icon
+                name="camera-outline"
+                size={24}
+                color={colors.textSecondary}
+              />
+            </TouchableOpacity>
+          )}
+        </View>
+      );
+    },
+    [
+      styles,
+      colors,
+      setIsEmojiPickerOpen,
+      handleAttachmentSelect,
+      setIsAttachmentModalVisible,
+    ],
+  );
+
+  const renderSend = useCallback(
+    (props: SendProps<IMessage>) => {
+      return (
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+          }}
+        >
+          <Send
+            {...(props as any)}
+            containerStyle={{
+              justifyContent: "flex-end",
+              alignItems: "center",
+              marginLeft: 8,
+              marginBottom: 0,
+            }}
+            disabled={!props.text || props.text.trim().length === 0}
+          >
+            <View
+              style={[
+                styles.sendButton,
+                {
+                  display:
+                    props.text && props.text.trim().length > 0
+                      ? "flex"
+                      : "none",
+                },
+              ]}
+            >
+              <MaterialIcons
+                name="send"
+                size={24}
+                color="#fff"
+                style={{ marginLeft: 4 }}
+              />
+            </View>
+          </Send>
+
+          {(!props.text || props.text.trim().length === 0) && (
+            <Pressable
+              style={[
+                styles.sendButton,
+                {
+                  marginLeft: 8,
+                  backgroundColor: Colors.PRIMARY[100],
+                },
+              ]}
+            >
+              <MaterialIcons name="mic" size={24} color="#fff" />
+            </Pressable>
+          )}
+        </View>
+      );
+    },
+    [styles, colors],
+  );
 
   return (
     <SafeAreaView style={styles.container}>
-      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <View style={{ flex: 1 }}>
-          {/* Header */}
-          <View style={styles.header}>
-            <TouchableOpacity
-              style={styles.backButton}
-              onPress={() => navigation.goBack()}
-            >
-              <Icon name="arrow-back" size={24} color={colors.text} />
-            </TouchableOpacity>
+      <View style={{ flex: 1 }}>
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Icon name="arrow-back" size={24} color={colors.text} />
+          </TouchableOpacity>
 
-            <FastImage
-              source={{
-                uri: avatar || "https://i.pravatar.cc/150",
-              }}
-              style={styles.headerAvatar}
-            />
+          <FastImage
+            source={{
+              uri: avatar || "https://i.pravatar.cc/150",
+            }}
+            style={styles.headerAvatar}
+          />
 
-            <View style={styles.headerInfo}>
-              <Text style={styles.headerName}>{name}</Text>
+          <View style={styles.headerInfo}>
+            <Text style={styles.headerName}>{name}</Text>
 
-              {targetUserId ? (
-                <Text
-                  style={[
-                    styles.headerStatus,
-                    {
-                      color: targetStatus.isOnline ? "#25D366" : "gray",
-                    },
-                  ]}
-                >
-                  {targetStatus.isOnline
-                    ? "Online"
-                    : targetStatus.lastSeen
-                    ? `Last seen at ${new Date(
-                        targetStatus.lastSeen,
-                      ).toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}`
-                    : "Offline"}
-                </Text>
-              ) : (
-                <Text style={styles.headerStatus}>online</Text>
-              )}
-            </View>
-
-            <View style={styles.headerIcons}>
-              <TouchableOpacity
-                style={styles.iconBtn}
-                onPress={initiateVideoCall}
+            {targetUserId ? (
+              <Text
+                style={[
+                  styles.headerStatus,
+                  {
+                    color: targetStatus.isOnline ? "#25D366" : "gray",
+                  },
+                ]}
               >
-                <Icon name="videocam" size={24} color={colors.text} />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.iconBtn}
-                onPress={initiateAudioCall}
-              >
-                <Icon name="call" size={20} color={colors.text} />
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.iconBtn} onPress={handleMoreOptions}>
-                <MaterialIcons name="more-vert" size={24} color={colors.text} />
-              </TouchableOpacity>
-            </View>
+                {targetStatus.isOnline
+                  ? "Online"
+                  : targetStatus.lastSeen
+                  ? `Last seen at ${new Date(
+                      targetStatus.lastSeen,
+                    ).toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}`
+                  : "Offline"}
+              </Text>
+            ) : (
+              <Text style={styles.headerStatus}>online</Text>
+            )}
           </View>
 
-          <KeyboardAvoidingView
-            style={{ flex: 1 }}
-            behavior={Platform.OS === "ios" ? "padding" : "height"}
-            keyboardVerticalOffset={Platform.OS === "ios" ? insets.bottom : 50}
-          >
-            <GiftedChat
-              messages={messages}
-              onSend={(messages) => onSend(messages)}
-              user={{
-                _id: currentUser?.id || 1,
-                name: currentUser?.name || "Me",
-                avatar: currentUser?.avatar || "",
-              }}
-              renderBubble={renderBubble}
-              renderInputToolbar={renderInputToolbar}
-              renderComposer={renderComposer}
-              renderSend={renderSend}
-              isSendButtonAlwaysVisible={true}
-              isAlignedTop={true}
-              renderMessageAudio={renderMessageAudio}
-              isTyping={isTargetTyping}
-            />
-          </KeyboardAvoidingView>
+          <View style={styles.headerIcons}>
+            <TouchableOpacity
+              style={styles.iconBtn}
+              onPress={initiateVideoCall}
+            >
+              <Icon name="videocam" size={24} color={colors.text} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.iconBtn}
+              onPress={initiateAudioCall}
+            >
+              <Icon name="call" size={20} color={colors.text} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.iconBtn}
+              onPress={handleMoreOptions}
+            >
+              <MaterialIcons name="more-vert" size={24} color={colors.text} />
+            </TouchableOpacity>
+          </View>
         </View>
-      </TouchableWithoutFeedback>
+
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          keyboardVerticalOffset={Platform.OS === "ios" ? insets.bottom : 50}
+        >
+          <GiftedChat
+            messages={messages}
+            onSend={(messages) => onSend(messages)}
+            user={{
+              _id: currentUser?.id || 1,
+              name: currentUser?.name || "Me",
+              avatar: currentUser?.avatar || "",
+            }}
+            text={text}
+            onInputTextChanged={setText}
+            renderMessageText={(props) => (
+              <MessageText
+                {...props}
+                currentMessage={{
+                  ...props.currentMessage!,
+                  text: (props.currentMessage as any)?.isEdited
+                    ? `${props.currentMessage!.text} (edited)`
+                    : props.currentMessage!.text,
+                }}
+              />
+            )}
+            onLongPress={(context, message) => {
+              if (message.user._id === currentUser?.id && !(message as any).isDeleted) {
+                Alert.alert(
+                  "Message Options",
+                  "Choose an action",
+                  [
+                    {
+                      text: "Edit",
+                      onPress: () => {
+                        setEditingMessage(message);
+                        setText(message.text || "");
+                      },
+                    },
+                    {
+                      text: "Delete",
+                      style: "destructive",
+                      onPress: () => {
+                        Alert.alert(
+                          "Delete Message",
+                          "Are you sure you want to delete this message?",
+                          [
+                            { text: "Cancel", style: "cancel" },
+                            {
+                              text: "Delete",
+                              style: "destructive",
+                              onPress: () => {
+                                socketService.emit("deleteMessage", {
+                                  messageId: message._id,
+                                  conversationId: chatId,
+                                });
+                              },
+                            },
+                          ]
+                        );
+                      },
+                    },
+                    {
+                      text: "Cancel",
+                      style: "cancel",
+                    },
+                  ],
+                  { cancelable: true }
+                );
+              }
+            }}
+            renderBubble={renderBubble}
+            renderInputToolbar={renderInputToolbar}
+            renderComposer={renderComposer}
+            renderSend={renderSend}
+            isSendButtonAlwaysVisible={true}
+            isAlignedTop={true}
+            renderMessageAudio={renderMessageAudio}
+            isTyping={isTargetTyping}
+            //@ts-ignore
+            onInputTextChanged={(text: string) => {
+              handleTyping(text);
+            }}
+          />
+        </KeyboardAvoidingView>
+      </View>
+
+      <EmojiPicker
+        onEmojiSelected={(emoji) => {
+          setIsEmojiPickerOpen(false); // Close picker after sending
+
+          const newMessage: IMessage = {
+            _id: Math.round(Math.random() * 1000000),
+            text: emoji.emoji,
+            createdAt: new Date(),
+            user: {
+              _id: currentUser?.id || 1,
+              name: currentUser?.name || "Me",
+              avatar: currentUser?.avatar || "",
+            },
+          };
+
+          onSend([newMessage]);
+        }}
+        open={isEmojiPickerOpen}
+        onClose={() => setIsEmojiPickerOpen(false)}
+        theme={{
+          backdrop: "#16161888",
+          knob: isDarkMode ? colors.border : "#e2e8f0",
+          container: isDarkMode ? colors.card : "#ffffff",
+          header: isDarkMode ? colors.text : "#1e293b",
+          skinTonesContainer: isDarkMode ? "#2c2c2e" : "#e2e8f0",
+          category: {
+            icon: isDarkMode ? colors.textSecondary : "#94a3b8",
+            iconActive: colors.PRIMARY[100],
+            container: isDarkMode ? colors.card : "#ffffff",
+            containerActive: isDarkMode ? "#2c2c2e" : "#e2e8f0",
+          },
+        }}
+      />
 
       <ImagePickerModal
         visible={isAttachmentModalVisible}

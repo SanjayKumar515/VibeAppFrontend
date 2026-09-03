@@ -20,8 +20,12 @@ import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import Icon from "react-native-vector-icons/Ionicons";
 import MaterialIcons from "react-native-vector-icons/MaterialIcons";
-import { useSelector } from "react-redux";
+import { useSelector, useDispatch } from "react-redux";
 import { RootState } from "../../../store";
+import {
+  setAllUnreadCounts,
+  incrementUnread,
+} from "../../../store/slices/chatSlice";
 import { AppStackProps } from "../../../@types";
 import { useTheme } from "../../../theme/ThemeContext";
 import getStyles from "./dashboard.styles";
@@ -81,6 +85,7 @@ const Dashboard = () => {
   const unreadCounts = useSelector(
     (state: RootState) => state.chat.unreadCounts,
   );
+  const dispatch = useDispatch();
   const [conversations, setConversations] = useState<any[]>([]);
   const [statuses, setStatuses] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -104,6 +109,17 @@ const Dashboard = () => {
             return timeB - timeA;
           });
           setConversations(sorted);
+
+          // Initialize unread counts from backend payload
+          if (currentUser?.id) {
+            const initialCounts: Record<string, number> = {};
+            sorted.forEach((conv: any) => {
+              if (conv.unreadCounts && conv.unreadCounts[currentUser.id]) {
+                initialCounts[conv._id] = conv.unreadCounts[currentUser.id];
+              }
+            });
+            dispatch(setAllUnreadCounts(initialCounts));
+          }
         }
       };
 
@@ -142,6 +158,7 @@ const Dashboard = () => {
               const newConvs = [...prev];
               newConvs.splice(convIndex, 1);
               newConvs.unshift(updatedConv);
+
               return newConvs;
             }
             return prev;
@@ -156,19 +173,19 @@ const Dashboard = () => {
       const requestConversations = () => {
         if (!hasReceivedData) {
           socketService.emit("getConversations", {});
-        }
 
-        // Fetch statuses as well to show rings
-        apiService
-          .get("/api/status")
-          .then((res) => {
-            if (res.success && res.data && res.data.recentUpdates) {
-              setStatuses(res.data.recentUpdates);
-            }
-          })
-          .catch((err) =>
-            console.log("Failed to fetch statuses for dashboard:", err),
-          );
+          // Fetch statuses as well to show rings
+          apiService
+            .get("/api/status")
+            .then((res) => {
+              if (res.success && res.data && res.data.recentUpdates) {
+                setStatuses(res.data.recentUpdates);
+              }
+            })
+            .catch((err) =>
+              console.log("Failed to fetch statuses for dashboard:", err),
+            );
+        }
       };
 
       // Initial request
@@ -316,8 +333,11 @@ const Dashboard = () => {
         <View style={styles.chatDetails}>
           <View style={styles.chatHeader}>
             <Text style={styles.chatName}>{displayName}</Text>
-            <Text style={styles.chatTime}>{timeText}</Text>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <Text style={styles.chatTime}>{timeText}</Text>
+            </View>
           </View>
+
           <View style={styles.chatFooter}>
             <View
               style={{
@@ -367,7 +387,7 @@ const Dashboard = () => {
       {/* Chat List */}
       {isLoading ? (
         <FlatList
-          data={[1, 2, 3, 4, 5, 6, 7]}
+          data={[1, 2, 3, 4]}
           keyExtractor={(item) => item.toString()}
           renderItem={() => <SkeletonItem colors={colors} styles={styles} />}
           showsVerticalScrollIndicator={false}
