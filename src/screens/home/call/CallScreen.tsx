@@ -115,7 +115,7 @@ const CallScreen = () => {
           });
         } else {
           // Receiver sets remote description and creates answer
-          if (incomingSignal) {
+          if (incomingSignal && incomingSignal.type) {
             try {
               await peerConnection.setRemoteDescription(
                 new RTCSessionDescription(incomingSignal),

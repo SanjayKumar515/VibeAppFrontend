@@ -12,6 +12,9 @@ import {
   Pressable,
   PermissionsAndroid,
   Alert,
+  TextInput,
+  AppState,
+  FlatList,
 } from "react-native";
 import {
   SafeAreaView,
@@ -47,11 +50,18 @@ import {
   heightPercentageToDP as hp,
 } from "react-native-responsive-screen";
 import { CommonImagePicker, ImagePickerModal } from "../../../components";
+import Modal from "react-native-modal";
 import { Colors } from "../../../constant";
 import EmojiPicker from "rn-emoji-keyboard";
 import { useCommonAlertModal } from "../../../components";
 
 type ChatRoomRouteProp = RouteProp<AppStackProps, "ChatRoom">;
+
+interface CustomMessage extends IMessage {
+  status?: string;
+  isEdited?: boolean;
+  isDeleted?: boolean;
+}
 
 const ChatRoom = () => {
   const { colors, isDarkMode } = useTheme();
@@ -64,13 +74,36 @@ const ChatRoom = () => {
   const { showAlert, hideAlert } = useCommonAlertModal();
   const currentUser = useSelector((state: RootState) => state.auth.user);
 
-  const [messages, setMessages] = useState<IMessage[]>([]);
+  const [messages, setMessages] = useState<CustomMessage[]>([]);
   const [text, setText] = useState("");
-  const [editingMessage, setEditingMessage] = useState<IMessage | null>(null);
+  const [editingMessage, setEditingMessage] = useState<CustomMessage | null>(
+    null,
+  );
 
   const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
   const [isAttachmentModalVisible, setIsAttachmentModalVisible] =
     useState(false);
+
+  const [selectedMessage, setSelectedMessage] = useState<CustomMessage | null>(
+    null,
+  );
+  const [isMessageOptionsVisible, setIsMessageOptionsVisible] = useState(false);
+  const [isForwardModalVisible, setIsForwardModalVisible] = useState(false);
+  const [conversations, setConversations] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (isForwardModalVisible) {
+      const handleGetConversations = (response: any) => {
+        setConversations(response.data);
+      };
+      socketService.on("getConversations", handleGetConversations);
+      socketService.emit("getConversations", {});
+
+      return () => {
+        socketService.off("getConversations", handleGetConversations);
+      };
+    }
+  }, [isForwardModalVisible]);
 
   const [isRecording, setIsRecording] = useState(false);
   const [recordTime, setRecordTime] = useState("00:00");
@@ -164,29 +197,62 @@ const ChatRoom = () => {
   };
 
   const onSend = useCallback(
-    (newMessages: IMessage[] = []) => {
+    (newMessages: CustomMessage[] = []) => {
       const msg = newMessages[0];
 
       if (editingMessage) {
+        console.log("Emitting editMessage:", { messageId: String(editingMessage._id), content: msg.text, conversationId: String(chatId) });
         socketService.emit("editMessage", {
-          messageId: editingMessage._id,
+          messageId: String(editingMessage._id),
           content: msg.text,
-          conversationId: chatId,
+          conversationId: String(chatId),
         });
+
+        // Optimistic update
+        setMessages((prevMessages) =>
+          prevMessages.map((m) =>
+            m._id === editingMessage._id
+              ? { ...m, text: msg.text, isEdited: true }
+              : m,
+          ),
+        );
+
         setEditingMessage(null);
         setText("");
+
       } else {
+        const tempId = "temp-" + Date.now();
+        const pendingMsg: CustomMessage = {
+          _id: tempId,
+          text: msg.text,
+          createdAt: new Date(),
+          user: {
+            _id: currentUser?.id as string,
+            name: currentUser?.name || "Me",
+            avatar: currentUser?.avatar || "",
+          },
+          status: "pending",
+          image: msg.image,
+          audio: msg.audio,
+        };
+
+        setMessages((previousMessages) =>
+          GiftedChat.append(previousMessages, [pendingMsg]),
+        );
+
         socketService.emit("newMessage", {
           conversationId: chatId,
           content: msg.text,
           attachement: msg.image,
           audio: msg.audio,
+          tempId: tempId,
           sender: {
             id: currentUser?.id,
             name: currentUser?.name || "Me",
             avatar: currentUser?.avatar || "",
           },
         });
+        setText("");
       }
     },
     [chatId, currentUser, editingMessage],
@@ -215,7 +281,7 @@ const ChatRoom = () => {
             imageUri = img.path;
           }
 
-          const newMessage: IMessage = {
+          const newMessage: CustomMessage = {
             _id: Math.round(Math.random() * 1000000),
             text: text,
             createdAt: new Date(),
@@ -330,9 +396,25 @@ const ChatRoom = () => {
             isDeleted: response.data.isDeleted || false,
           };
 
-          setMessages((previousMessages) =>
-            GiftedChat.append(previousMessages, [newMsg]),
-          );
+          setMessages((previousMessages) => {
+            if (response.data.sender.id === currentUser?.id) {
+              // Find the first pending message that matches
+              let foundPending = false;
+              const filtered = previousMessages.filter((m) => {
+                if (
+                  !foundPending &&
+                  m.status === "pending" &&
+                  m.text === newMsg.text
+                ) {
+                  foundPending = true;
+                  return false; // remove this pending message
+                }
+                return true;
+              });
+              return GiftedChat.append(filtered, [newMsg]);
+            }
+            return GiftedChat.append(previousMessages, [newMsg]);
+          });
 
           if (response.data.sender.id !== currentUser?.id) {
             socketService.emit("markAsRead", { conversationId: chatId });
@@ -347,8 +429,8 @@ const ChatRoom = () => {
           prevMessages.map((msg) =>
             msg.user._id !== data.readerId && msg.status !== "read"
               ? { ...msg, status: "read" }
-              : msg
-          )
+              : msg,
+          ),
         );
       }
     };
@@ -359,8 +441,8 @@ const ChatRoom = () => {
           prevMessages.map((msg) =>
             msg._id === data.messageId && msg.status === "sent"
               ? { ...msg, status: "delivered" }
-              : msg
-          )
+              : msg,
+          ),
         );
       }
     };
@@ -371,8 +453,8 @@ const ChatRoom = () => {
           prevMessages.map((msg) =>
             msg._id === data.messageId
               ? { ...msg, text: data.content, isEdited: true }
-              : msg
-          )
+              : msg,
+          ),
         );
       }
     };
@@ -382,9 +464,15 @@ const ChatRoom = () => {
         setMessages((prevMessages) =>
           prevMessages.map((msg) =>
             msg._id === data.messageId
-              ? { ...msg, text: "🚫 This message was deleted", isDeleted: true, image: undefined, audio: undefined }
-              : msg
-          )
+              ? {
+                  ...msg,
+                  text: "🚫 This message was deleted",
+                  isDeleted: true,
+                  image: undefined,
+                  audio: undefined,
+                }
+              : msg,
+          ),
         );
       }
     };
@@ -449,8 +537,19 @@ const ChatRoom = () => {
 
     const retryInterval = setInterval(requestMessages, 1500);
 
+    const appStateSubscription = AppState.addEventListener(
+      "change",
+      (nextAppState) => {
+        if (nextAppState === "active") {
+          socketService.emit("getMessages", { conversationId: chatId });
+          socketService.emit("markAsRead", { conversationId: chatId });
+        }
+      },
+    );
+
     return () => {
       clearInterval(retryInterval);
+      appStateSubscription.remove();
 
       socketService.off("getMessages", handleGetMessages);
       socketService.off("newMessage", handleNewMessage);
@@ -551,6 +650,14 @@ const ChatRoom = () => {
               return (
                 <View style={{ marginRight: 10, marginBottom: 5 }}>
                   <Icon name="checkmark-done" size={16} color="gray" />
+                </View>
+              );
+            }
+
+            if (status === "pending") {
+              return (
+                <View style={{ marginRight: 10, marginBottom: 5 }}>
+                  <Icon name="time-outline" size={16} color="gray" />
                 </View>
               );
             }
@@ -670,7 +777,7 @@ const ChatRoom = () => {
   );
 
   const renderSend = useCallback(
-    (props: SendProps<IMessage>) => {
+    (props: SendProps<CustomMessage>) => {
       return (
         <View
           style={{
@@ -812,7 +919,6 @@ const ChatRoom = () => {
               avatar: currentUser?.avatar || "",
             }}
             text={text}
-            onInputTextChanged={setText}
             renderMessageText={(props) => (
               <MessageText
                 {...props}
@@ -824,64 +930,117 @@ const ChatRoom = () => {
                 }}
               />
             )}
-            onLongPress={(context, message) => {
-              if (message.user._id === currentUser?.id && !(message as any).isDeleted) {
-                Alert.alert(
-                  "Message Options",
-                  "Choose an action",
-                  [
-                    {
-                      text: "Edit",
-                      onPress: () => {
-                        setEditingMessage(message);
-                        setText(message.text || "");
-                      },
-                    },
-                    {
-                      text: "Delete",
-                      style: "destructive",
-                      onPress: () => {
-                        Alert.alert(
-                          "Delete Message",
-                          "Are you sure you want to delete this message?",
-                          [
-                            { text: "Cancel", style: "cancel" },
-                            {
-                              text: "Delete",
-                              style: "destructive",
-                              onPress: () => {
-                                socketService.emit("deleteMessage", {
-                                  messageId: message._id,
-                                  conversationId: chatId,
-                                });
-                              },
-                            },
-                          ]
-                        );
-                      },
-                    },
-                    {
-                      text: "Cancel",
-                      style: "cancel",
-                    },
-                  ],
-                  { cancelable: true }
-                );
+            onLongPressMessage={(context: any, message: any) => {
+              if (!(message as any).isDeleted) {
+                setSelectedMessage(message);
+                setIsMessageOptionsVisible(true);
               }
             }}
             renderBubble={renderBubble}
-            renderInputToolbar={renderInputToolbar}
-            renderComposer={renderComposer}
-            renderSend={renderSend}
-            isSendButtonAlwaysVisible={true}
+            renderInputToolbar={() => null} // Hide default input toolbar completely
             isAlignedTop={true}
             renderMessageAudio={renderMessageAudio}
             isTyping={isTargetTyping}
-            //@ts-ignore
-            onInputTextChanged={(text: string) => {
-              handleTyping(text);
-            }}
+            // bottomOffset={Platform.OS === "ios" ? insets.bottom : 0}
           />
+
+          {/* Fully Custom Input Footer */}
+          <View
+            style={{
+              flexDirection: "row",
+              backgroundColor: "transparent",
+              borderTopWidth: 0,
+              paddingHorizontal: wp(2),
+              paddingVertical: hp(0.5),
+              alignItems: "flex-end",
+            }}
+          >
+            <View style={styles.inputBox}>
+              <TouchableOpacity
+                style={{ padding: 12, paddingRight: 6 }}
+                onPress={() => {
+                  Keyboard.dismiss();
+                  setIsEmojiPickerOpen(true);
+                }}
+              >
+                <Icon
+                  name="happy-outline"
+                  size={24}
+                  color={colors.textSecondary}
+                />
+              </TouchableOpacity>
+
+              <TextInput
+                style={styles.textInput}
+                multiline
+                value={text}
+                onChangeText={(newText) => {
+                  setText(newText);
+                  handleTyping(newText);
+                }}
+                placeholder="Type a message..."
+                placeholderTextColor={colors.textSecondary}
+              />
+
+              <TouchableOpacity
+                style={{ padding: 12, paddingLeft: 6 }}
+                onPress={() => handleAttachmentSelect("Document")}
+              >
+                <Icon name="attach" size={24} color={colors.textSecondary} />
+              </TouchableOpacity>
+
+              {(!text || text.trim().length === 0) && (
+                <TouchableOpacity
+                  style={{ padding: 12, paddingLeft: 0 }}
+                  onPress={() => setIsAttachmentModalVisible(true)}
+                >
+                  <Icon
+                    name="camera-outline"
+                    size={24}
+                    color={colors.textSecondary}
+                  />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              {text && text.trim().length > 0 ? (
+                <TouchableOpacity
+                  style={[styles.sendButton, { marginLeft: 8 }]}
+                  onPress={() => {
+                    onSend([
+                      {
+                        _id: Math.round(Math.random() * 1000000),
+                        text: text.trim(),
+                        createdAt: new Date(),
+                        user: {
+                          _id: currentUser?.id || 1,
+                          name: currentUser?.name || "Me",
+                          avatar: currentUser?.avatar || "",
+                        },
+                      },
+                    ]);
+                  }}
+                >
+                  <MaterialIcons
+                    name="send"
+                    size={24}
+                    color="#fff"
+                    style={{ marginLeft: 4 }}
+                  />
+                </TouchableOpacity>
+              ) : (
+                <Pressable
+                  style={[
+                    styles.sendButton,
+                    { marginLeft: 8, backgroundColor: Colors.PRIMARY[100] },
+                  ]}
+                >
+                  <MaterialIcons name="mic" size={24} color="#fff" />
+                </Pressable>
+              )}
+            </View>
+          </View>
         </KeyboardAvoidingView>
       </View>
 
@@ -889,7 +1048,7 @@ const ChatRoom = () => {
         onEmojiSelected={(emoji) => {
           setIsEmojiPickerOpen(false); // Close picker after sending
 
-          const newMessage: IMessage = {
+          const newMessage: CustomMessage = {
             _id: Math.round(Math.random() * 1000000),
             text: emoji.emoji,
             createdAt: new Date(),
@@ -924,6 +1083,263 @@ const ChatRoom = () => {
         onClose={() => setIsAttachmentModalVisible(false)}
         onSelect={handleAttachmentSelect}
       />
+
+      {/* Message Options Modal */}
+      <Modal
+        isVisible={isMessageOptionsVisible}
+        onBackdropPress={() => setIsMessageOptionsVisible(false)}
+        onBackButtonPress={() => setIsMessageOptionsVisible(false)}
+        style={{ justifyContent: "flex-end", margin: 0 }}
+      >
+        <View
+          style={{
+            backgroundColor: colors.background,
+            padding: 20,
+            borderTopLeftRadius: 20,
+            borderTopRightRadius: 20,
+          }}
+        >
+          <Text
+            style={{
+              fontSize: 18,
+              fontWeight: "bold",
+              color: colors.text,
+              marginBottom: 15,
+            }}
+          >
+            Message Options
+          </Text>
+
+          {selectedMessage?.user._id === currentUser?.id && (
+            <>
+              <TouchableOpacity
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  paddingVertical: 12,
+                }}
+                onPress={() => {
+                  setIsMessageOptionsVisible(false);
+                  setEditingMessage(selectedMessage);
+                  setText(selectedMessage?.text || "");
+                }}
+              >
+                <Icon
+                  name="pencil"
+                  size={24}
+                  color={colors.text}
+                  style={{ marginRight: 15 }}
+                />
+                <Text style={{ fontSize: 16, color: colors.text }}>
+                  Edit Message
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  paddingVertical: 12,
+                }}
+                onPress={() => {
+                  setIsMessageOptionsVisible(false);
+                  Alert.alert(
+                    "Delete Message",
+                    "Are you sure you want to delete this message?",
+                    [
+                      { text: "Cancel", style: "cancel" },
+                      {
+                        text: "Delete",
+                        style: "destructive",
+                        onPress: () => {
+                          console.log("Emitting deleteMessage:", { messageId: String(selectedMessage?._id), conversationId: String(chatId) });
+                          socketService.emit("deleteMessage", {
+                            messageId: String(selectedMessage?._id),
+                            conversationId: String(chatId),
+                          });
+
+                          setMessages((prevMessages) =>
+                            prevMessages.map((m) =>
+                              m._id === selectedMessage?._id
+                                ? {
+                                    ...m,
+                                    text: "🚫 This message was deleted",
+                                    isDeleted: true,
+                                    image: undefined,
+                                    audio: undefined,
+                                  }
+                                : m,
+                            ),
+                          );
+                        },
+                      },
+                    ],
+                  );
+                }}
+              >
+                <Icon
+                  name="trash"
+                  size={24}
+                  color="#f44336"
+                  style={{ marginRight: 15 }}
+                />
+                <Text style={{ fontSize: 16, color: "#f44336" }}>
+                  Delete for Everyone
+                </Text>
+              </TouchableOpacity>
+            </>
+          )}
+
+          <TouchableOpacity
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              paddingVertical: 12,
+            }}
+            onPress={() => {
+              setIsMessageOptionsVisible(false);
+              setTimeout(() => {
+                setIsForwardModalVisible(true);
+              }, 400); // slight delay to allow the first modal to close
+            }}
+          >
+            <Icon
+              name="arrow-forward"
+              size={24}
+              color={colors.text}
+              style={{ marginRight: 15 }}
+            />
+            <Text style={{ fontSize: 16, color: colors.text }}>
+              Forward Message
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              paddingVertical: 12,
+              marginTop: 10,
+            }}
+            onPress={() => setIsMessageOptionsVisible(false)}
+          >
+            <Icon
+              name="close"
+              size={24}
+              color={colors.textSecondary}
+              style={{ marginRight: 15 }}
+            />
+            <Text style={{ fontSize: 16, color: colors.textSecondary }}>
+              Cancel
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
+
+      {/* Forward Modal */}
+      <Modal
+        isVisible={isForwardModalVisible}
+        onBackdropPress={() => setIsForwardModalVisible(false)}
+        onBackButtonPress={() => setIsForwardModalVisible(false)}
+        style={{ justifyContent: "flex-end", margin: 0 }}
+      >
+        <View
+          style={{
+            backgroundColor: colors.background,
+            padding: 20,
+            borderTopLeftRadius: 20,
+            borderTopRightRadius: 20,
+            height: hp(70),
+          }}
+        >
+          <Text
+            style={{
+              fontSize: 18,
+              fontWeight: "bold",
+              color: colors.text,
+              marginBottom: 15,
+            }}
+          >
+            Forward to...
+          </Text>
+
+          <FlatList
+            data={conversations}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  paddingVertical: 12,
+                  borderBottomWidth: 1,
+                  borderBottomColor: colors.border,
+                }}
+                onPress={() => {
+                  const tempId = "temp-" + Date.now();
+                  socketService.emit("newMessage", {
+                    conversationId: item.id,
+                    content: selectedMessage?.text || "",
+                    attachement: selectedMessage?.image,
+                    audio: selectedMessage?.audio,
+                    tempId: tempId,
+                    sender: {
+                      id: currentUser?.id,
+                      name: currentUser?.name || "Me",
+                      avatar: currentUser?.avatar || "",
+                    },
+                  });
+                  setIsForwardModalVisible(false);
+
+                  showAlert(
+                    "Success",
+                    "Message forwarded successfully",
+                    "OK",
+                    () => {
+                      hideAlert();
+                    },
+                  );
+                }}
+              >
+                <FastImage
+                  source={{
+                    uri: item.user.avatar || "https://via.placeholder.com/150",
+                  }}
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 20,
+                    marginRight: 15,
+                  }}
+                />
+                <Text style={{ fontSize: 16, color: colors.text }}>
+                  {item.user.name}
+                </Text>
+              </TouchableOpacity>
+            )}
+            ListEmptyComponent={
+              <Text
+                style={{
+                  color: colors.textSecondary,
+                  textAlign: "center",
+                  marginTop: 20,
+                }}
+              >
+                No conversations found
+              </Text>
+            }
+          />
+
+          <TouchableOpacity
+            style={{ paddingVertical: 12, alignItems: "center", marginTop: 10 }}
+            onPress={() => setIsForwardModalVisible(false)}
+          >
+            <Text style={{ fontSize: 16, color: colors.textSecondary }}>
+              Cancel
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };

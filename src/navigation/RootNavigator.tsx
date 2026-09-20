@@ -21,7 +21,15 @@ const RootNavigator = () => {
   const activeChatRoomId = useSelector(
     (state: RootState) => state.chat.activeChatRoomId,
   );
+  const unreadCounts = useSelector(
+    (state: RootState) => state.chat.unreadCounts,
+  );
   const dispatch = useDispatch();
+
+  useEffect(() => {
+    const totalUnread = Object.values(unreadCounts).reduce((acc: number, count: number) => acc + (count || 0), 0);
+    notifee.setBadgeCount(totalUnread).catch((e) => console.log('Error setting badge count:', e));
+  }, [unreadCounts]);
 
   const activeChatRoomIdRef = useRef(activeChatRoomId);
   const userRef = useRef(user);
@@ -121,7 +129,7 @@ const RootNavigator = () => {
 
     socketService.on("incomingCall", handleIncomingCall);
 
-    const handleNotifeeCall = (data: any) => {
+    const handleNotifeeCall = (data: any, autoAccept: boolean = false) => {
       let signal = null;
       try {
         signal = data.signalData ? JSON.parse(data.signalData) : null;
@@ -129,12 +137,21 @@ const RootNavigator = () => {
       
       const navigateWhenReady = () => {
         if (navigationRef.isReady()) {
-          navigationRef.navigate("IncomingCallScreen", {
-            callerId: data.callerId,
-            callerName: data.callerName || "Unknown",
-            callerAvatar: data.callerAvatar || "",
-            signal: signal,
-          });
+          if (autoAccept) {
+            navigationRef.navigate("CallScreen", {
+              targetUserId: data.callerId,
+              targetName: data.callerName || "Unknown",
+              isCaller: false,
+              incomingSignal: signal,
+            });
+          } else {
+            navigationRef.navigate("IncomingCallScreen", {
+              callerId: data.callerId,
+              callerName: data.callerName || "Unknown",
+              callerAvatar: data.callerAvatar || "",
+              signal: signal,
+            });
+          }
         } else {
           setTimeout(navigateWhenReady, 100);
         }
@@ -147,17 +164,23 @@ const RootNavigator = () => {
         initialNotification &&
         initialNotification.notification.data?.type === "INCOMING_CALL"
       ) {
-        handleNotifeeCall(initialNotification.notification.data);
+        const isAnswerAction = initialNotification.pressAction?.id === "answer";
+        handleNotifeeCall(initialNotification.notification.data, isAnswerAction);
       }
     });
 
     const unsubscribeForeground = notifee.onForegroundEvent(
       ({ type, detail }) => {
         if (
-          type === EventType.PRESS &&
+          (type === EventType.PRESS || type === EventType.ACTION_PRESS) &&
           detail.notification?.data?.type === "INCOMING_CALL"
         ) {
-          handleNotifeeCall(detail.notification.data);
+          // If it's an action press, only handle 'answer'. Ignore 'decline'.
+          if (type === EventType.ACTION_PRESS && detail.pressAction?.id === "decline") {
+            return;
+          }
+          const isAnswerAction = type === EventType.ACTION_PRESS && detail.pressAction?.id === "answer";
+          handleNotifeeCall(detail.notification.data, isAnswerAction);
         }
       },
     );
