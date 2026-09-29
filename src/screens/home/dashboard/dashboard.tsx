@@ -226,15 +226,37 @@ const Dashboard = () => {
         })
       : "";
 
+    const currentUserId = currentUser?.id || (currentUser as any)?._id;
     const isMyMessage =
-      item.lastMessage?.sender?._id === currentUser?.id ||
-      item.lastMessage?.sender?.id === currentUser?.id ||
-      item.lastMessage?.sender === currentUser?.id;
+      item.lastMessage?.sender?._id === currentUserId ||
+      item.lastMessage?.sender?.id === currentUserId ||
+      item.lastMessage?.sender === currentUserId;
 
     // Defaulting to 'read' if status is missing in the data to show the blue ticks just like WhatsApp
     const messageStatus = item.lastMessage?.status || "read";
 
     const renderStatusIcon = () => {
+      const lowerText = lastMsgText.toLowerCase();
+      if (
+        lowerText.includes("missed call") ||
+        lowerText.includes("voice call") ||
+        lowerText.includes("video call") ||
+        lowerText.includes("incoming call") ||
+        lowerText.includes("outgoing call") ||
+        item.lastMessage?.type === "call"
+      ) {
+        const isMissed = lowerText.includes("missed") || item.lastMessage?.callStatus === "missed";
+        const isVideo = lowerText.includes("video") || item.lastMessage?.callMode === "video";
+        return (
+          <Icon
+            name={isVideo ? "videocam" : "call"}
+            size={16}
+            color={isMissed ? "#FF3B30" : "gray"}
+            style={{ marginRight: 4 }}
+          />
+        );
+      }
+
       if (!isMyMessage || !item.lastMessage) return null;
 
       if (messageStatus === "read") {
