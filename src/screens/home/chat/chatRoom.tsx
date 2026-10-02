@@ -201,7 +201,11 @@ const ChatRoom = () => {
       const msg = newMessages[0];
 
       if (editingMessage) {
-        console.log("Emitting editMessage:", { messageId: String(editingMessage._id), content: msg.text, conversationId: String(chatId) });
+        console.log("Emitting editMessage:", {
+          messageId: String(editingMessage._id),
+          content: msg.text,
+          conversationId: String(chatId),
+        });
         socketService.emit("editMessage", {
           messageId: String(editingMessage._id),
           content: msg.text,
@@ -219,7 +223,6 @@ const ChatRoom = () => {
 
         setEditingMessage(null);
         setText("");
-
       } else {
         const tempId = "temp-" + Date.now();
         const pendingMsg: CustomMessage = {
@@ -424,10 +427,10 @@ const ChatRoom = () => {
     };
 
     const handleMessagesRead = (data: any) => {
-      if (data.conversationId === chatId) {
+      if (String(data.conversationId) === String(chatId)) {
         setMessages((prevMessages) =>
           prevMessages.map((msg) =>
-            msg.user._id !== data.readerId && msg.status !== "read"
+            msg.user._id === currentUser?.id && msg.status !== "read"
               ? { ...msg, status: "read" }
               : msg,
           ),
@@ -436,10 +439,12 @@ const ChatRoom = () => {
     };
 
     const handleMessagesDelivered = (data: any) => {
-      if (data.conversationId === chatId) {
+      if (String(data.conversationId) === String(chatId)) {
         setMessages((prevMessages) =>
           prevMessages.map((msg) =>
-            msg._id === data.messageId && msg.status === "sent"
+            ((data.messageId && String(msg._id) === String(data.messageId)) ||
+              (!data.messageId && msg.user._id === currentUser?.id)) &&
+            msg.status !== "read"
               ? { ...msg, status: "delivered" }
               : msg,
           ),
@@ -480,7 +485,9 @@ const ChatRoom = () => {
     socketService.on("newMessage", handleNewMessage);
     socketService.on("getMessages", handleGetMessages);
     socketService.on("messagesRead", handleMessagesRead);
+    socketService.on("messageRead", handleMessagesRead);
     socketService.on("messagesDelivered", handleMessagesDelivered);
+    socketService.on("messageDelivered", handleMessagesDelivered);
     socketService.on("messageEdited", handleMessageEdited);
     socketService.on("messageDeleted", handleMessageDeleted);
 
@@ -554,7 +561,9 @@ const ChatRoom = () => {
       socketService.off("getMessages", handleGetMessages);
       socketService.off("newMessage", handleNewMessage);
       socketService.off("messagesRead", handleMessagesRead);
+      socketService.off("messageRead", handleMessagesRead);
       socketService.off("messagesDelivered", handleMessagesDelivered);
+      socketService.off("messageDelivered", handleMessagesDelivered);
       socketService.off("messageEdited", handleMessageEdited);
       socketService.off("messageDeleted", handleMessageDeleted);
 
@@ -870,7 +879,10 @@ const ChatRoom = () => {
                   : targetStatus.lastSeen
                   ? `Last seen at ${new Date(
                       targetStatus.lastSeen,
-                    ).toLocaleTimeString([], {
+                    ).toLocaleString([], {
+                      year: "numeric",
+                      month: "short",
+                      day: "numeric",
                       hour: "2-digit",
                       minute: "2-digit",
                     })}`
@@ -1152,7 +1164,10 @@ const ChatRoom = () => {
                         text: "Delete",
                         style: "destructive",
                         onPress: () => {
-                          console.log("Emitting deleteMessage:", { messageId: String(selectedMessage?._id), conversationId: String(chatId) });
+                          console.log("Emitting deleteMessage:", {
+                            messageId: String(selectedMessage?._id),
+                            conversationId: String(chatId),
+                          });
                           socketService.emit("deleteMessage", {
                             messageId: String(selectedMessage?._id),
                             conversationId: String(chatId),
